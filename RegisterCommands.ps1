@@ -25,10 +25,6 @@ try {
     }
 
     Add-Content -Path $PROFILE -Value $fragment
-    
-    # Load Commands.ps1 to make the commands available in the current session:
-    #. $PSScriptRoot\Commands.ps1 <<< doesn't work for some reason
-    # Write-Host "SUCCESS! The 'c', 'b' and 'd' commands are available."
 
     $prompt = "SUCCESS! The 'c', 'b' and 'd' commands will be available after you restart PowerShell.`r`nDo you want to restart now? Enter y or n"
     $userAnswer = Read-Host $prompt
