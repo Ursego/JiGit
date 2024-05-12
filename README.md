@@ -2,9 +2,9 @@ JiGit - Git Automation with Jira Integration
 
 Scripts to automate Git feature branches creation and deletion, and backport (cherry-pick, retrofit) from DEV to other releases, in an agile environment with many Jira tickets backported to many releases.
 
-#########################################################################################################
+#####################################################################################
 COMMANDS DESCRIPTION:
-#########################################################################################################
+#####################################################################################
 
 There are 3 commands. The name of each consists of only one letter - c, b or d:
 
@@ -108,9 +108,9 @@ Run it when you have squashed and merged ALL the backport PRs.
 
 The script deletes ALL the branches 'c'reated for the ticket (including the DEV branch), from both remotes and locals.
 
-#########################################################################################################
+#####################################################################################
 REMARKS:
-#########################################################################################################
+#####################################################################################
 
 Run the commands in PowerShell, NOT in Windows Command Prompt.
 
@@ -125,17 +125,17 @@ If any of them is not provided, you will be prompted to enter it. So, you can si
 
 'b' can work only with branches created with 'c' (not through Jira). 'd' deletes any branches.
 
-#########################################################################################################
+#####################################################################################
 TO DO BEFORE YOU RUN A COMMAND:
-#########################################################################################################
+#####################################################################################
 
 Go to the Settings.ps1 file and populate all the constants which are NOT marked as OPTIONAL.
 
 Make the 'c', 'b' and 'd' commands available by running the RegisterCommands.ps1 file - paste its full path into PowerShell and press Enter.
 
-#########################################################################################################
+#####################################################################################
 ERROR HANDLING:
-#########################################################################################################
+#####################################################################################
 
 The scripts stop execution after the first encountered error - you will see the error message immediately, with no need to scroll up.
 So, you can launch a script and do another work meanwhile, with no fear of missing an error.
@@ -144,9 +144,9 @@ The error is also shown as a Windows popup (can be suppressed by setting DISPLAY
 If any script fails after some branches were processed successfully, you can fix the issue and re-run the script with the same parameter(s).
 The already processed ('c'reated, 'b'ackported or 'd'eleted) branches will be skipped with no errors.
 
-#########################################################################################################
+#####################################################################################
 FOLDERS FOR TICKETS' ARTEFACTS:
-#########################################################################################################
+#####################################################################################
 
 Many developers manage tickets using dedicated folders where they place related files.
 Each such folder usually has a text file named after the ticket - for remarks, related SQLs, TODOs etc.
