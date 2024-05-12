@@ -1,6 +1,4 @@
-JiGit - Git Automation with Jira Integration
-
-Scripts to automate Git feature branches creation and deletion, and backport (cherry-pick, retrofit) from DEV to other releases, in an agile environment with many Jira tickets backported to many releases.
+JiGit - Jira-integrated Git automation PowerShell scripts to create/delete feature branches and backport (cherry-pick, retrofit) from DEV to other releases in an agile environment with many Jira tickets backported to many releases.
 
 ##################################################################################################################################
 COMMANDS DESCRIPTION:
