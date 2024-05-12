@@ -7,7 +7,7 @@
 #
 # The details are in _______ReadMe_______.txt
 ###################################################################################################################################################
-# By Michael Zuskin - https://www.linkedin.com/in/zuskin/
+# By Michael Zuskin | https://www.linkedin.com/in/zuskin/ | https://github.com/Ursego/JiGit
 ###################################################################################################################################################
 
 . "${PSScriptRoot}\HelperFunctions.ps1"
