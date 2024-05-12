@@ -1,0 +1,5 @@
+JiGit - Git Automation with Jira Integration
+
+Scripts to automate Git feature branches creation and deletion, and backport (cherry-pick, retrofit) from DEV to other releases, in an agile environment with many Jira tickets backported to many releases.
+
+See the _______ReadMe_______.txt file.
