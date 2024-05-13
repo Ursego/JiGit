@@ -6,7 +6,6 @@ Add-Type -AssemblyName System.Windows.Forms
 [string] $SILENTLY_HALT = "SILENTLY_HALT"
 [string] $TICKET_TYPE = "TYPE"
 [string] $TICKET_TITLE = "TITLE"
-[string] $TICKET_CLIENT = "CLIENT"
 [string] $SETTINGS_FILE = "${PSScriptRoot}\Settings.ps1"
 
 . "${SETTINGS_FILE}"
@@ -70,12 +69,11 @@ function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport 
 
     if (IsPopulated $err) {
         $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`nPlease sync both the sets "
-        $err +=
-            if (IsPopulated $DEFAULT_BACKPORT_RELS_CSV) {
-                "by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
-            } else {
-                "in a Git client and/or Jira.`n"
-            }
+        $err += if (IsPopulated $DEFAULT_BACKPORT_RELS_CSV) {
+            "by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
+        } else {
+            "in a Git client and/or Jira.`n"
+        }
 
         throw $err
     }
@@ -140,7 +138,7 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
                 "b ${ticket} ${commitHash} rel1,rel2,rel3`n"
     }
 
-    [string] $msg # in confirmation messages, blank = success, don't display confirmation box
+    [string] $msg # in confirmation messages, blank denotes success ("don't display confirmation box")
     
     # Error message if the ticket has no feature branches at all:
     if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
@@ -149,13 +147,13 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
         throw $msg
     }
 
-    # Confirmation message if the user passed a release which is not in $DEFAULT_BACKPORT_RELS (probably, misspelled, but could be a rare non-standard release):
+    # Confirmation message if the user passed a release which is not in $DEFAULT_BACKPORT_RELS_CSV:
     if ($backportRelsArePassedAsParam) {
-        [string[]] $ubnormalBackportRels = $backportRels | Where-Object { $_ -notin (GetDefaultBackportRels) }
-        $msg = switch ($ubnormalBackportRels.Count) {
+        [string[]] $backportRelsNotInDefault = $backportRels | Where-Object { $_ -notin (GetDefaultBackportRels) }
+        $msg = switch ($backportRelsNotInDefault.Count) {
             0       { $null }
-            1       { "$($ubnormalBackportRels[0]) is not in DEFAULT_BACKPORT_RELS_CSV.`n`nAre you sure you want to backport into it?" }
-            default { "These releases are not in DEFAULT_BACKPORT_RELS_CSV:`n`n$(ArrayToNlsv $ubnormalBackportRels)`n`nAre you sure you want to backport into them?" }
+            1       { "$($backportRelsNotInDefault[0]) is not in DEFAULT_BACKPORT_RELS_CSV.`n`nAre you sure you want to backport into it?" }
+            default { "These releases are not in DEFAULT_BACKPORT_RELS_CSV:`n`n$(ArrayToNlsv $backportRelsNotInDefault)`n`nAre you sure you want to backport into them?" }
         }
         LetUserConfirm $msg
     }
@@ -170,18 +168,21 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     if (-not $backportingIntoDevRel) {
         [string[]] $fixVersions = GetFixVersions $ticket
         [string[]] $backportFixVersions = $fixVersions | Where-Object { $_ -notmatch $DEV_REL }
-        if ($backportRels.Count -eq $backportFixVersions.Count) {
-            $msg = $null
-        } else {
-            $msg = "The 'Fix Version/s' field contains $($backportFixVersions.Count) backport release"
-            $msg += if ($backportFixVersions.Count -gt 1) { "s" } else { "" }
-            $msg += ":`n`n$(ArrayToNlsv $backportFixVersions)`n`nHowever, you are backporting into $($backportRels.Count) release"
+        switch ($backportFixVersions.Count) {
+            $backportRels.Count { $msg = $null }
+            0                   { $msg = "The ticket's 'Fix Version/s' field is empty." }
+            default             { $msg = "The ticket's 'Fix Version/s' field contains $($backportFixVersions.Count) backport release"
+                                  $msg += if ($backportFixVersions.Count -gt 1) { "s" } else { "" }
+                                  $msg += ":`n`n$(ArrayToNlsv $backportFixVersions)" }
+        }
+        if (IsPopulated $msg) {
+            $msg += "`n`nHowever, you are backporting into $($backportRels.Count) release"
             $msg += if ($backportRels.Count -gt 1) { "s" } else { "" }
             $msg += if (-not $backportRelsArePassedAsParam) { " taken from DEFAULT_BACKPORT_RELS_CSV" } else { "" }
             $msg += ":`n`n${backportRelsNlsv}`n`nDo you want to continue?"
+            LetUserConfirm $msg
+            $userReviewedBackportRels = $true
         }
-        LetUserConfirm $msg
-        if (IsPopulated $msg) { $userReviewedBackportRels = $true }
     }
 
     # Confirmation message if there is a release with a feature branch created, into which the user is NOT backporting.
@@ -193,35 +194,24 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     # So, in certain circumstances, two messages can be shown which seem similar to each other.
     [string[]] $ignoredRelsHavingBranches = $relsHavingBranches | Where-Object { $_ -notin (@($DEV_REL) + $backportRels)}
     switch ($ignoredRelsHavingBranches.Count) {
-        0 {
-            $msg = $null
-        }
-        1 {
-            $msg = "$($ignoredRelsHavingBranches[0]) has a feature branch but you didn't request to backport into it"
-            if (-not $backportRelsArePassedAsParam) {
-                $msg += " since it's not in DEFAULT_BACKPORT_RELS_CSV."
-            }
-            $msg += ".`n`nDo you want to continue?" +
-                    "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}." +
-                    "`n`n`nNo:`n`nAbort the backport, I will re-backport with $($ignoredRelsHavingBranches[0]) included."
-            $msg
-        }
-        default {
-            $msg = "The following releases have feature branches but you didn't request to backport into them"
-            if (-not $backportRelsArePassedAsParam) {
-                $msg += " since they are not in DEFAULT_BACKPORT_RELS_CSV."
-            }
-            $msg += ":`n`n$(ArrayToNlsv $ignoredRelsHavingBranches)`n`nDo you want to continue?" +
-                    "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}" +
-                    "`n`n`nNo:`n`nAbort the backport, I will re-backport with these releases included."
-        }
+        0       { $msg = $null }
+        1       { $msg = "$($ignoredRelsHavingBranches[0]) has a feature branch but you didn't request to backport into it"
+                  if (-not $backportRelsArePassedAsParam) { $msg += " since it's not in DEFAULT_BACKPORT_RELS_CSV." }
+                  $msg += ".`n`nDo you want to continue?" +
+                          "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}." +
+                          "`n`n`nNo:`n`nAbort the backport, I will re-backport with $($ignoredRelsHavingBranches[0]) included." }
+        default { $msg = "The following releases have feature branches but you didn't request to backport into them"
+                  if (-not $backportRelsArePassedAsParam) { $msg += " since they are not in DEFAULT_BACKPORT_RELS_CSV." }
+                  $msg += ":`n`n$(ArrayToNlsv $ignoredRelsHavingBranches)`n`nDo you want to continue?" +
+                          "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}" +
+                          "`n`n`nNo:`n`nAbort the backport, I will re-backport with these releases included." }
     }
     LetUserConfirm $msg
     if (IsPopulated $msg) { $userReviewedBackportRels = $true }
     
     # Confirmation message just to remind the user into which releases, taken from DEFAULT_BACKPORT_RELS_CSV, the backports will be done
     # (if the user didn't have a chance to review them in one of the previouis messages):
-    if ((-not $backportRelsArePassedAsParam) -and (-not $userReviewedBackportRels)) {
+    if ($CONFIRM_BACKPORT -and (-not $backportRelsArePassedAsParam) -and (-not $userReviewedBackportRels)) {
         LetUserConfirm "You are going to backport commit ${commitHash} into:`n`n${backportRelsNlsv}`n`nDo you want to continue?"
     }
     
@@ -255,7 +245,7 @@ function ValidateDelete ([string] $ticket) {
 } # ValidateDelete
 
 function ValidateSettings {
-    [string[]] $constants = @('DISPLAY_ERROR_POPUP', 'DISPLAY_SUCCESS_POPUP', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
+    [string[]] $constants = @('DISPLAY_ERROR_POPUP', 'DISPLAY_SUCCESS_POPUP', 'CONFIRM_BACKPORT_RELS', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
                                 'TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM',
                                 'DEV_REL', 'DEFAULT_BACKPORT_RELS_CSV',
                                 'REMOTE_GIT_REPO_URL', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV',
@@ -306,8 +296,7 @@ function PopulateEnvVarsFromJira ([string] $ticket) {
     if (IsEmpty $ticketType) { throw "The 'Type' field is empty in ${ticket}." }
     SetEnvVar $ticket $TICKET_TYPE $ticketType
     SetEnvVar $ticket $TICKET_TITLE $jiraResponse.fields.summary
-    SetEnvVar $ticket $TICKET_CLIENT $jiraResponse.fields.customfield_10470.value
-    # To find a Jira field name, go to https://tylerjira.tylertech.com/rest/agile/latest/issue/CLT-78487 and find the field by its contents.
+    # To find a Jira field name, go to https://[your org Jira URL]/rest/agile/latest/issue/[ticket number (PREFIX-DIGITS)] and find the field by its contents.
 } # PopulateEnvVarsFromJira
 
 function GetFixVersions ([string] $ticket) {
@@ -316,7 +305,7 @@ function GetFixVersions ([string] $ticket) {
     PrintMsg "`nGetting ticket's Fix Version/s from Jira for validating..."
     [PSCustomObject] $jiraResponse = InvokeJiraApi $ticket
     [string[]] $fixVersions = $jiraResponse.fields.fixVersions | ForEach-Object { $_.description }
-    if (-not $fixVersions) { throw "The 'Fix Version/s' field is empty in ${ticket}." }
+    if (-not $fixVersions) { $fixVersions = @() } 
     return $fixVersions
 } # GetFixVersions
 
@@ -338,11 +327,6 @@ function GetTicketTitle ([string] $ticket) {
     PopulateEnvVarsFromJira $ticket
     return GetEnvVar $ticket $TICKET_TITLE
 } # GetTicketTitle
-
-function GetTicketClient ([string] $ticket) {
-    PopulateEnvVarsFromJira $ticket
-    return GetEnvVar $ticket $TICKET_CLIENT
-} # GetTicketClient
 
 ###################################################################################################################################################
 # Messages functions:
@@ -536,8 +520,7 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
 
         # Also, create the XXXXX.txt file within it:
         [string] $fileContent = "_TICKET_NAME_ _TICKET_TITLE_`n" +
-                                "CLIENT: _TICKET_CLIENT_`n" +
-                                "${JIRA_URL}/browse/_TICKET_NAME_.`n" +
+                                "Hi <write the tester name here>, ${JIRA_URL}/browse/_TICKET_NAME_ is ready for peer review.`n" +
                                 "_DEV_PR_CREATION_URL_"
         Set-Content -Path "${templateFolderPath}\XXXXX.txt" -Value $fileContent
 
@@ -555,17 +538,12 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
     Rename-Item -Path "${newTicketFolderPath}\XXXXX.txt" -NewName "${ticket}.txt"
 
     # In that txt file, substitute the placeholders with the actual values:
-
     [string] $filePath = Join-Path -Path $TICKETS_FOLDER_PATH -ChildPath "${ticket}\${ticket}.txt"
     [string] $fileContent = Get-Content $filePath -Raw
-
     [string] $ticketTitle = GetTicketTitle $ticket
-    [string] $ticketClient = GetTicketClient $ticket
     [string] $devPrCreationUrl = BuildPrCreationUrl $DEV_REL $branch
-
     $fileContent = $fileContent -replace '_TICKET_NAME_', $ticket
     $fileContent = $fileContent -replace '_TICKET_TITLE_', $ticketTitle
-    $fileContent = $fileContent -replace '_TICKET_CLIENT_', $ticketClient
     $fileContent = $fileContent -replace '_DEV_PR_CREATION_URL_', $devPrCreationUrl
 
     Set-Content $filePath -Value $fileContent

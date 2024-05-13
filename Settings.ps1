@@ -45,7 +45,7 @@
 #   after creating branches (to download their remote/ pointers), and
 #   after deleting branches (to prune their remote/ pointers).
 # Refreshing takes time, but we usually don't need the remote/ pointers in repos other than working (if you need them one day, just Pull the repo).
-# So, consider declaring the array blank to make 'c' and 'd' commands faster:
+# So, consider declaring the constant blank to make 'c' and 'd' commands faster:
 [string[]] $Global:REPOS_TO_REFRESH_CSV = "" # OPTIONAL (like "repo1,repo2,repo3")
 
 ###################################################################################################################################################

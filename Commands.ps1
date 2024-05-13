@@ -7,8 +7,6 @@
 #
 # The details are in _______ReadMe_______.txt
 ###################################################################################################################################################
-# By Michael Zuskin | https://www.linkedin.com/in/zuskin/ | https://github.com/Ursego/JiGit
-###################################################################################################################################################
 
 . "${PSScriptRoot}\HelperFunctions.ps1"
 
@@ -81,7 +79,7 @@ function c ([string] $ticketsCsv) {
                         if ($gitResult) { throw "Cannot create $newBranch on LOCALS.`n`n${gitResult}" }
                     }
                 } else {
-                    PrintMsg "   Creating on LOCALS is skipped since the branch already exists locally."
+                    PrintMsg "   Creating on LOCALS is skipped since it already exists locally."
                 }
 
                 [bool] $alreadyPublished = (ArrayContainsValue $remoteCreatedBranches $newBranch)
@@ -324,10 +322,10 @@ function d ([string] $ticket) {
                 }
 
                 $msg = "`n   This branch is currently checked-out in $($WORKING_REPO.ToUpper()).`n" +
-                                  "   Checking out another branch (${anyRel}) in order to enable the deletion...`n`n" +
-                                  "   If you will get 'Please commit your changes or stash them before you switch branches',`n" +
-                                  "   resolve the issue in a Git client app and re-run:`n" +
-                                  "   d ${ticket}`n"
+                        "   Checking out another branch (${anyRel}) in order to enable the deletion...`n`n" +
+                        "   If you will get 'Please commit your changes or stash them before you switch branches',`n" +
+                        "   resolve the issue in a Git client app and re-run:`n" +
+                        "   d ${ticket}`n"
                 PrintMsg $msg
                 [string] $gitResult = git checkout $anyRel 2>&1
                 if ($LASTEXITCODE -ne 0) { throw "Cannot check out ${anyRel}.`n`n${gitResult}" }
@@ -346,10 +344,10 @@ function d ([string] $ticket) {
                         # But sometimes Git shows this error for no reason. It even suggests to force the deletion using capital -D instead of -d in the error message:
                         # "The branch '<branch-name>' is not fully merged. If you are sure you want to delete it, run 'git branch -D <branch-name>'"
                         $msg = "${branchToDelete} is not fully merged." +
-                                    "`n`nAre you sure you want to delete it?" +
-                                    "`n`nYes - I am sure it's fully merged." +
-                                    "`n`nNo - Skip the deletion, I will merge it." +
-                                    "`n`nIf you are unsure, click No. After this script finishes executing, double-check in a Git client app and merge unmerged changes if they exist."
+                                "`n`nAre you sure you want to delete it?" +
+                                "`n`nYes - I am sure it's fully merged." +
+                                "`n`nNo - Skip the deletion, I will merge it." +
+                                "`n`nIf you are unsure, click No. After this script finishes executing, double-check in a Git client app and merge unmerged changes if they exist."
                         if (UserRepliedYes $msg) {
                             [string] $gitResult = git branch -$DONT_CHECK_UNMERGED_CHANGES $branchToDelete 2>&1
                             if ($LASTEXITCODE -ne 0) { throw "Cannot delete ${branchToDelete} from LOCALS.`n`n${gitResult}" }

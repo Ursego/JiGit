@@ -110,12 +110,10 @@ The script deletes ALL the branches 'c'reated for the ticket (including the DEV 
 REMARKS:
 ##################################################################################################################################
 
-Run the commands in PowerShell, NOT in Windows Command Prompt.
-
-There should be no spaces in the CSVs since spaces delimit parameters.
-
 If your project has a most frequently used ticket prefix (such as "ABCD-"), store it in the DEFAULT_TICKET_PREFIX constant.
 It will be added automatically if you provide only the digits part of the ticket number ("12345" => "ABCD-12345").
+
+There should be no spaces in the CSVs since spaces delimit parameters.
 
 All the parameters (excluding the backport releases parameter to 'b') are mandatory.
 
@@ -180,7 +178,6 @@ ABCD-33333
 The XXXXX.txt file, automatically created by the script, will have the next fragment:
 
 _TICKET_NAME_ _TICKET_TITLE_
-CLIENT: _TICKET_CLIENT_
 <Jira URL taken from the JIRA_URL constant>/browse/_TICKET_NAME_
 _DEV_PR_CREATION_URL_
 
@@ -190,8 +187,7 @@ The only thing you need to do manually within the created XXXXX.txt is change <w
 EXPLANATION:
 
 Line 1 can be copied to the required "Description" field when you commit.
-Line 2 helps to recall the client while working within the txt file (with no need to open the ticket).
-Line 3 allows to quickly open the ticket from Notepad++ by double-clicking the link - instead of searching in the Jira board.
-Line 4 is the URL to double-click when it's time to create the DEV PR. You can create it from a Git client, but then you will need to populate the "base:" dropdown manually.
+Line 2 allows to quickly open the ticket from Notepad++ by double-clicking the link - instead of searching in the Jira board.
+Line 3 is the URL to double-click when it's time to create the DEV PR. You can create it from a Git client, but then you will need to populate the "base:" dropdown manually.
 
 You can remove any placeholders from your XXXXX.txt or change their location.
