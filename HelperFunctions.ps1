@@ -74,7 +74,6 @@ function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport 
         } else {
             "in a Git client and/or Jira.`n"
         }
-
         throw $err
     }
 
@@ -87,6 +86,7 @@ function GetRelsHavingBranches ([string] $ticket) {
     [string[]] $relsHavingBranches = $createdBranches | ForEach-Object { ExtractRelFromBranch $_ }
     return $relsHavingBranches
 } # GetRelsHavingBranches
+
 
 function GetAnyRelFromSettings () {
     if (IsPopulated $DEV_REL) { return $DEV_REL }
@@ -108,13 +108,27 @@ function ValidateCreate () {
         throw "DEV_REL and DEFAULT_BACKPORT_RELS_CSV are empty.`nAt lease one of them is required to create a branch."
     }
     
-    [string] $msg = if (IsEmpty $DEV_REL) {
-        "DEV_REL is empty.`n`nDo you want to continue and create only backport branches (under ${DEFAULT_BACKPORT_RELS_CSV})?"
+    [string] $msg
+    if (IsEmpty $DEV_REL) {
+        $msg = "DEV_REL is empty.`n`n"
+        if (IsPopulated $TICKETS_FOLDER_PATH) {
+            $msg += "So, the ticket folder will NOT be created.`n" +
+                    "If you want it, click No and move at least one release`n" +
+                    "from DEFAULT_BACKPORT_RELS_CSV to DEV_REL.`n`n"
+        }
+        $msg += "Do you want to continue and create "
+        $msg += if ($DEFAULT_BACKPORT_RELS_CSV -match ",") {
+            "branches only for the next releases?`n`n$(ArrayToNlsv (GetDefaultBackportRels))"
+        } else {
+            "a branch only for ${DEFAULT_BACKPORT_RELS_CSV}?"
+        }
+        # $msg += if ($DEFAULT_BACKPORT_RELS_CSV -match ",") { "branches" } else { "a branch" }
+        # $msg += " only for ${DEFAULT_BACKPORT_RELS_CSV}?"
     } elseif (IsEmpty $DEFAULT_BACKPORT_RELS_CSV) {
-        "DEFAULT_BACKPORT_RELS_CSV is empty.`n`nDo you want to continue and create only the DEV branch (under ${DEV_REL})?"
+        $msg = "DEFAULT_BACKPORT_RELS_CSV is empty.`n`nDo you want to continue and create only the DEV branch (under ${DEV_REL})?"
     }
     if ((IsPopulated $msg) -and (UserRepliedNo $msg)) {
-        PrintMsg "`nThe branches creation is aborted`n."
+        PrintMsg "`nThe branches creation is aborted.`n"
         throw $SILENTLY_HALT
     }
 } # ValidateCreate
@@ -164,7 +178,7 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     [bool]     $userReviewedBackportRels = $false
     
     # Confirmation message if the user is backporting into a different number of releases than the backport releases in the "Fix Version/s" field.
-    # Don't validate if the user is backporting into the DEV release (that is a very unlike but still possible scenario):
+    # Don't validate if the user is backporting into the DEV release (in this very specific scenario, the user must know what they are doing if the prev message was answered Yes):
     if (-not $backportingIntoDevRel) {
         [string[]] $fixVersions = GetFixVersions $ticket
         [string[]] $backportFixVersions = $fixVersions | Where-Object { $_ -notmatch $DEV_REL }
@@ -239,7 +253,7 @@ function ValidateDelete ([string] $ticket) {
         throw "${ticket} has no branches to delete. Make sure you passed a correct ticket number."
     }
     if ($CONFIRM_DELETING_BRANCHES -and (UserRepliedNo "Are you sure you want to delete all the branches of ${ticket}?")) {
-        PrintMsg "The deletion of ${ticket} branches is aborted.`n"
+        PrintMsg "`nThe deletion of ${ticket} branches is aborted.`n"
         throw $SILENTLY_HALT
     }
 } # ValidateDelete
@@ -296,7 +310,7 @@ function PopulateEnvVarsFromJira ([string] $ticket) {
     if (IsEmpty $ticketType) { throw "The 'Type' field is empty in ${ticket}." }
     SetEnvVar $ticket $TICKET_TYPE $ticketType
     SetEnvVar $ticket $TICKET_TITLE $jiraResponse.fields.summary
-    # To find a Jira field name, go to https://[your org Jira URL]/rest/agile/latest/issue/[ticket number (PREFIX-DIGITS)] and find the field by its contents.
+    # To find a Jira field name, go to https://tylerjira.tylertech.com/rest/agile/latest/issue/CLT-78487 and find the field by its contents.
 } # PopulateEnvVarsFromJira
 
 function GetFixVersions ([string] $ticket) {
@@ -337,7 +351,7 @@ function PrintMsg ([string] $msg) {
 } # PrintMsg
 
 function DisplayPopup ([string] $msg, [string] $title) {
-    [MessageBox]::Show($msg, $title) > null # > null avoids printing the clicked button's text to the terminal
+    [MessageBox]::Show($msg, $title) > $null # > $null avoids printing the clicked button's text to the terminal
 } # DisplayPopup
 
 function DisplaySuccessMsg ([string] $msg) {
@@ -373,7 +387,7 @@ function AcceptFromUserIfNotProvided ([string] $val, [string] $prompt) {
     if (IsEmpty $val) {
         $val = Read-Host $prompt
         if (IsEmpty $val) {
-            Write-Host "No value entered. The operation is aborted.`n"
+            PrintMsg "`nNo value entered. The operation is aborted.`n"
             throw $SILENTLY_HALT
         }
     }
@@ -381,6 +395,7 @@ function AcceptFromUserIfNotProvided ([string] $val, [string] $prompt) {
 } # AcceptFromUserIfNotProvided
 
 function AddPrefixIfNotProvided ([string] $ticket) {
+    if ($ticket.Contains(" ")) { throw "Pass a single ticket, not a comma-separated list." }
     [bool] $prefixIsProvided = $ticket.Contains("-")
     if ($prefixIsProvided) { # like "ABC-11111"
         $ticket = $ticket.ToUpper()

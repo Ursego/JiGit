@@ -14,7 +14,7 @@
 # The "C"reate Branches script
 ###################################################################################################################################################
 
-function c ([string] $ticketsCsv) {
+function c ([string] $ticketsCsv, [string] $superfluousParam) {
     [string] $msg
     [string] $msgTitle
     [bool]   $firstIteration = $true
@@ -22,6 +22,10 @@ function c ([string] $ticketsCsv) {
 
     try {
         Clear-Host
+        if (IsPopulated $superfluousParam) {
+            throw "The '${superfluousParam}' parameter is superfluous.`n" +
+                    "Pass only one parameter - the ticket number`nor a comma-separated list of the ticket numbers (with no spaces)."
+        }
         ValidateSettings
         ValidateCreate
         SwitchToWorkingRepo
@@ -122,7 +126,7 @@ function c ([string] $ticketsCsv) {
 # The "B"ackport Commit script
 ###################################################################################################################################################
 
-function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
+function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [string] $superfluousParam) {
     [string]   $msg
     [string]   $prompt
     [string]   $failedRel
@@ -133,6 +137,11 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
 
     try {
         Clear-Host
+        if (IsPopulated $superfluousParam) {
+            throw "The '${superfluousParam}' parameter is superfluous.`n"+
+                    "Pass up to 3 parameters - the ticket number,`nthe commit hash and a comma-separated list`nof the backport releases (with no spaces)."
+        }
+            #throw "Pass up to 3 parameters - the ticket number, the commit hash and a comma-separated list of the backport releases (with no spaces)."
         ValidateSettings
         SwitchToWorkingRepo
 
@@ -278,7 +287,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
 # The "D"elete Branches script
 ###################################################################################################################################################
 
-function d ([string] $ticket) {
+function d ([string] $ticket, [string] $superfluousParam) {
     [string]   $msg
     [bool]     $atLeastOneBranchIsDeleted = $false
     [string[]] $undeletedBranches = @()
@@ -287,6 +296,10 @@ function d ([string] $ticket) {
 
     try {
         Clear-Host
+        if (IsPopulated $superfluousParam) {
+            throw "The '${superfluousParam}' parameter is superfluous.`nPass only one parameter - the ticket number."
+        }
+        #if (IsPopulated $superfluousParam) { throw "Pass only one parameter - the ticket number." }
         ValidateSettings
         SwitchToWorkingRepo
 
