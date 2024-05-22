@@ -182,7 +182,6 @@ _TICKET_NAME_ _TICKET_TITLE_
 _DEV_PR_CREATION_URL_
 
 When XXXXX.txt is cloned together with its parent XXXXX folder, the 'c' script will substitute the placeholders with the actual values.
-The only thing you need to do manually within the created XXXXX.txt is change <write the tester name here> to the actual tester name.
 
 EXPLANATION:
 
