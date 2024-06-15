@@ -141,7 +141,6 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
             throw "The '${superfluousParam}' parameter is superfluous.`n"+
                     "Pass up to 3 parameters - the ticket number,`nthe commit hash and a comma-separated list`nof the backport releases (with no spaces)."
         }
-            #throw "Pass up to 3 parameters - the ticket number, the commit hash and a comma-separated list of the backport releases (with no spaces)."
         ValidateSettings
         SwitchToWorkingRepo
 
@@ -200,6 +199,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
                     PrintMsg "      The branch doesn't exist, so the backport into it is skipped."
                     continue
                 } else {
+                    $failedRel = $backportRel
                     throw "Cannot check out ${targetFeatBranch}`n`n${gitResult}"
                 }
             }
@@ -207,34 +207,37 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
             PrintMsg "   Cherry-picking..."
             [string] $gitResult = git cherry-pick $commitHash 2>&1
             if ($LASTEXITCODE -ne 0) {
+                $failedRel = $backportRel
                 if ($gitResult.Contains("The previous cherry-pick is now empty, possibly due to conflict resolution")) {
-                    PrintMsg "      Commit ${commitHash} was already cherry-picked into this branch."
-                    PrintMsg "   Push is skipped since the existing cherry-pick is pushed."
+                    PrintMsg "      Cherry-pick is skipped since commit ${commitHash} has already been cherry-picked into this branch."
+                    $relsBackportedPreviously += $backportRel
+                    # Don't "continue" - proceed to Pushing. Most probably, the cherry-pick is already pushed.
+                    # However, communication with Git could be lost on the previous run after cherry-pick but before push. In this scenario, we still need to push.
+                } elseif ($gitResult.Contains("conflict")) {
+                    throw "Conflict on backporting into ${backportRel}."
+                } elseif ($gitResult.Contains("bad revision")) {
+                    throw "Commit ${commitHash} doesn't exist."
+                } else {
                     # Abort the cherry pick to avoid this error on the next repo pull:
                     # "You have not concluded your cherry-pick (CHERRY_PICK_HEAD exists). Please, commit your changes before you merge."
                     git cherry-pick --abort
-                    $relsBackportedPreviously += $backportRel
-                    continue
-                } elseif ($gitResult.Contains("conflict")) {
-                    $gitResult = "Conflict on backporting into ${backportRel}."
-                } elseif ($gitResult.Contains("bad revision")) {
-                    $gitResult = "Commit ${commitHash} doesn't exist."
+                    throw "The cherry-pick failed:`n`n${gitResult}`n`nThe cherry-pick is aborted. Re-run the backport." 
                 }
-                $failedRel = $backportRel
-                throw $gitResult
             }
 
             PrintMsg "   Pushing..."
             [string] $gitResult = git push --set-upstream origin $targetFeatBranch 2>&1
             if ($LASTEXITCODE -ne 0) {
+                $failedRel = $backportRel
                 if ($gitResult.Contains("conflict")) {
-                    $gitResult = "Conflict on backporting into ${backportRel}." 
+                    throw "Conflict on backporting into ${backportRel}."
+                } elseif ($gitResult.Contains("everything up-to-date")) {
+                    PrintMsg "      Push is skipped since the cherry-pick has already been pushed into this branch."
+                    continue
                 } else {
                     git cherry-pick --abort
-                    $gitResult = "The push failed:`n`n${gitResult}`n`nThe cherry-pick is aborted. Re-run the backport." 
+                    throw "The push failed:`n`n${gitResult}`n`nThe cherry-pick is aborted. Re-run the backport." 
                 }
-                $failedRel = $backportRel
-                throw $gitResult
             }
             
             $prCreationUrls += BuildPrCreationUrl -rel $backportRel -featBranch $targetFeatBranch
@@ -365,7 +368,9 @@ function d ([string] $ticket, [string] $superfluousParam) {
                             [string] $gitResult = git branch -$DONT_CHECK_UNMERGED_CHANGES $branchToDelete 2>&1
                             if ($LASTEXITCODE -ne 0) { throw "Cannot delete ${branchToDelete} from LOCALS.`n`n${gitResult}" }
                         } else {
-                            PrintMsg "      Deletion of this branch is skipped. After you merge it (or make sure it's fully merged), re-run this command to complete the deleting: d ${ticket}"
+                            PrintMsg "      Deletion of this branch is skipped.`n" +
+                                        "      After you merge it (or make sure it's fully merged),`n" +
+                                        "      re-run this command to complete the deleting: d ${ticket}"
                             $undeletedBranches += $branchToDelete
                             continue
                         }
