@@ -53,6 +53,12 @@ HOW TO OBTAIN THE COMMIT HASH:
 In the DEV Pull Request, find (Ctrl+F) 'merged commit' - you will see '[your_name] merged commit [commit_hash] into [release]'.
 Tip: immediately after creating the DEV Pull Request, grab its commit hash and run the 'b' command.
 
+CONFIRMATION MESSAGE
+
+After you run the command, a confirmation messsage is displayed.
+It shows two lists for you to review - the releases, into which you are backporting, and the releases in the ticket's "Fix Version/s" field.
+If you are backporting into a different number of backport releases than apear in "Fix Version/s" (supposing it contains also the DEV release), you will be warn.
+
 THE RELEASES PARAMETER:
 
 If it's omitted, the releases are taken from DEFAULT_BACKPORT_RELS_CSV.
@@ -64,14 +70,12 @@ PARTIAL BACKPORT:
 
 The situation: the ticket is designed to be backported only into a part of the standard releases and has less "Fix Version/s" than DEFAULT_BACKPORT_RELS_CSV.
 The solution: pass ONLY the relevant releases to 'b' as a parameter.
-This situation is captured - a confirmation message is shown if you are backporting into a different number of backport releases than there are in "Fix Version/s".
 
 A RELEASE WAS RECENTLY REMOVED FROM THE PROJECT:
 
 The situation: you recently removed a release from DEFAULT_BACKPORT_RELS_CSV but it's still in the ticket's "Fix Version/s" and you need to backport into it.
 The solution: pass ALL the releases to 'b' as a parameter (including the release removed from DEFAULT_BACKPORT_RELS_CSV).
-Alternatively, you can temporarily restore that release in DEFAULT_BACKPORT_RELS_CSV and run 'b' with no releases parameter, but don't forget to clean up immediately after.
-This situation is captured - a confirmation message is shown if you are NOT backporting into a release for which a feature branch exists.
+Alternatively, you can temporarily restore that release in DEFAULT_BACKPORT_RELS_CSV and run 'b' with no releases parameter, but don't forget to clean up after that.
 
 There is another situation. It doesn't require sending the releases parameter but let's consider it for completeness.
 
