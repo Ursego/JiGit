@@ -40,8 +40,12 @@ function GetLocalCreatedBranches ([string] $ticket) {
 
 function GetRemoteCreatedBranches ([string] $ticket, [bool] $gitFetch = $true) {
     if ($gitFetch) {
-        PrintMsg "Fetching $($WORKING_REPO.ToUpper()) to download the remote branches latest info..."
-        git fetch --prune
+        [string] $msg = "Fetching $($WORKING_REPO.ToUpper()) to download the remote branches latest info"
+        PrintMsg "${msg}..."
+        [string] $gitResult = git fetch --prune 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "${msg} failed:`n${gitResult}"
+        }
     }
     [string[]] $remoteCreatedBranches = git branch -r --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
         # Each returned branch name starts with "  origin/": "  origin/Rel1", "  origin/Rel2", "  origin/Rel3"
@@ -122,8 +126,6 @@ function ValidateCreate () {
         } else {
             "a branch only for ${DEFAULT_BACKPORT_RELS_CSV}?"
         }
-        # $msg += if ($DEFAULT_BACKPORT_RELS_CSV -match ",") { "branches" } else { "a branch" }
-        # $msg += " only for ${DEFAULT_BACKPORT_RELS_CSV}?"
     } elseif (IsEmpty $DEFAULT_BACKPORT_RELS_CSV) {
         $msg = "DEFAULT_BACKPORT_RELS_CSV is empty.`n`nDo you want to continue and create only the DEV branch (under ${DEV_REL})?"
     }
@@ -165,71 +167,44 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     if ($backportRelsArePassedAsParam) {
         [string[]] $backportRelsNotInDefault = $backportRels | Where-Object { $_ -notin (GetDefaultBackportRels) }
         $msg = switch ($backportRelsNotInDefault.Count) {
-            0       { $null }
+            0       { $null } # success
             1       { "$($backportRelsNotInDefault[0]) is not in DEFAULT_BACKPORT_RELS_CSV.`n`nAre you sure you want to backport into it?" }
             default { "These releases are not in DEFAULT_BACKPORT_RELS_CSV:`n`n$(ArrayToNlsv $backportRelsNotInDefault)`n`nAre you sure you want to backport into them?" }
         }
         LetUserConfirm $msg
     }
 
-    [string[]] $relsHavingBranches = GetRelsHavingBranches $ticket
+    [string[]] $fixVersions = GetFixVersions $ticket
+    [int]      $backportFixVersionsCount = $fixVersions.Count - 1 # supposing one is the DEV release
     [string]   $backportRelsNlsv = ArrayToNlsv $backportRels
-    [bool]     $backportingIntoDevRel = (ArrayContainsValue $backportRels $DEV_REL)
-    [bool]     $userReviewedBackportRels = $false
+    [string]   $pluralEnding = if ($backportRels.Count -gt 1) { "s" } else { "" }
     
-    # Confirmation message if the user is backporting into a different number of releases than the backport releases in the "Fix Version/s" field.
-    # Don't validate if the user is backporting into the DEV release (in this very specific scenario, the user must know what they are doing if the prev message was answered Yes):
-    if (-not $backportingIntoDevRel) {
-        [string[]] $fixVersions = GetFixVersions $ticket
-        [string[]] $backportFixVersions = $fixVersions | Where-Object { $_ -notmatch $DEV_REL }
-        switch ($backportFixVersions.Count) {
-            $backportRels.Count { $msg = $null }
-            0                   { $msg = "The ticket's 'Fix Version/s' field is empty." }
-            default             { $msg = "The ticket's 'Fix Version/s' field contains $($backportFixVersions.Count) backport release"
-                                  $msg += if ($backportFixVersions.Count -gt 1) { "s" } else { "" }
-                                  $msg += ":`n`n$(ArrayToNlsv $backportFixVersions)" }
-        }
-        if (IsPopulated $msg) {
-            $msg += "`n`nHowever, you are backporting into $($backportRels.Count) release"
-            $msg += if ($backportRels.Count -gt 1) { "s" } else { "" }
-            $msg += if (-not $backportRelsArePassedAsParam) { " taken from DEFAULT_BACKPORT_RELS_CSV" } else { "" }
-            $msg += ":`n`n${backportRelsNlsv}`n`nDo you want to continue?"
-            LetUserConfirm $msg
-            $userReviewedBackportRels = $true
+    # Confirmation messages to review the backports releases:
+    switch ($backportFixVersionsCount) {
+        $backportRels.Count { $msg = $null } # success
+        -1                  { $msg = "The ticket's 'Fix Version/s' field is empty." }
+        default             { $msg = "The ticket's 'Fix Version/s':`n`n$(ArrayToNlsv $fixVersions)."
+                              $msg += "`n`nSupposing one of them is DEV, it seems like you need to backport into ${backportFixVersionsCount} release"
+                              $msg += if ($backportFixVersionsCount -gt 1) { "s." } else { "." }
         }
     }
-
-    # Confirmation message if there is a release with a feature branch created, into which the user is NOT backporting.
-    # This is a legit scenario which can happen when:
-    #   'c' created an unneeded branch (even though the ticket shouldn't be backported into it).
-    #   'c' created a branch for a release which was later removed from $DEFAULT_BACKPORT_RELS.
-    # Usually, this situation is captured by the previous validation but that validation is not reliable since it checks only the number of releases.
-    # Even when the numbers fit, the backport releases can be wrong. Example: one release was removed from DEFAULT_BACKPORT_RELS_CSV, but another was added.
-    # So, in certain circumstances, two messages can be shown which seem similar to each other.
-    [string[]] $ignoredRelsHavingBranches = $relsHavingBranches | Where-Object { $_ -notin (@($DEV_REL) + $backportRels)}
-    switch ($ignoredRelsHavingBranches.Count) {
-        0       { $msg = $null }
-        1       { $msg = "$($ignoredRelsHavingBranches[0]) has a feature branch but you didn't request to backport into it"
-                  if (-not $backportRelsArePassedAsParam) { $msg += " since it's not in DEFAULT_BACKPORT_RELS_CSV." }
-                  $msg += ".`n`nDo you want to continue?" +
-                          "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}." +
-                          "`n`n`nNo:`n`nAbort the backport, I will re-backport with $($ignoredRelsHavingBranches[0]) included." }
-        default { $msg = "The following releases have feature branches but you didn't request to backport into them"
-                  if (-not $backportRelsArePassedAsParam) { $msg += " since they are not in DEFAULT_BACKPORT_RELS_CSV." }
-                  $msg += ":`n`n$(ArrayToNlsv $ignoredRelsHavingBranches)`n`nDo you want to continue?" +
-                          "`n`n`nYes:`n`nBackport only into:`n`n${backportRelsNlsv}" +
-                          "`n`n`nNo:`n`nAbort the backport, I will re-backport with these releases included." }
+    $msg += if (IsPopulated $msg) {
+        "`n`nHowever, you are backporting into $($backportRels.Count) release${pluralEnding}:" +
+        "`n`n${backportRelsNlsv}" +
+        "`n`nDo you want to continue?"
+    } else {
+        "Everything looks good, you are backporting into $($backportRels.Count) release${pluralEnding}:" +
+        "`n`n${backportRelsNlsv}" +
+        "`n`n$($backportRels.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
+        "`n`nHowever, you might want to make sure that you are backporting into the CORRECT release${pluralEnding}." +
+        "`n`n'Fix Version/s' (one of them is DEV):" +
+        "`n`n$(ArrayToNlsv $fixVersions)." +
+        "`n`nDo you want to continue?"
     }
     LetUserConfirm $msg
-    if (IsPopulated $msg) { $userReviewedBackportRels = $true }
-    
-    # Confirmation message just to remind the user into which releases, taken from DEFAULT_BACKPORT_RELS_CSV, the backports will be done
-    # (if the user didn't have a chance to review them in one of the previouis messages):
-    if ($CONFIRM_BACKPORT -and (-not $backportRelsArePassedAsParam) -and (-not $userReviewedBackportRels)) {
-        LetUserConfirm "You are going to backport commit ${commitHash} into:`n`n${backportRelsNlsv}`n`nDo you want to continue?"
-    }
     
     # Error message if the user is backporting into a release which has no feature branch:
+    [string[]] $relsHavingBranches = GetRelsHavingBranches $ticket
     [string[]] $branchlessBackportRels = $backportRels | Where-Object { $_ -notin $relsHavingBranches }
     if ($branchlessBackportRels.Count -eq 1) {
         $msg = "You cannot backport into $($branchlessBackportRels[0]) since it has no feature branch. Run if you need to backport into it:" +
@@ -259,7 +234,7 @@ function ValidateDelete ([string] $ticket) {
 } # ValidateDelete
 
 function ValidateSettings {
-    [string[]] $constants = @('DISPLAY_ERROR_POPUP', 'DISPLAY_SUCCESS_POPUP', 'CONFIRM_BACKPORT_RELS', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
+    [string[]] $constants = @('DISPLAY_ERROR_POPUP', 'DISPLAY_SUCCESS_POPUP', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
                                 'TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM',
                                 'DEV_REL', 'DEFAULT_BACKPORT_RELS_CSV',
                                 'REMOTE_GIT_REPO_URL', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV',
@@ -495,7 +470,7 @@ function EnvVarExists ([string] $ticket, [string] $key) { # reports if an env va
 
 function CleanUpEnvVars ([string] $ticket) {
     Get-ChildItem env: | Where-Object { $_.Name -like "${$DEVELOPER}*${ticket}*" } | ForEach-Object {
-	    # Remove the var, making the change persistent across sessions and reboots:
+	# Remove the var, making the change persistent across sessions and reboots:
         [System.Environment]::SetEnvironmentVariable($_.Name, $null, [System.EnvironmentVariableTarget]::User)
         # Remove the var from the current session:
         Remove-Item -Path "env:$($_.Name)" -ErrorAction SilentlyContinue
