@@ -59,7 +59,7 @@ function c ([string] $ticketsCsv, [string] $superfluousParam) {
             foreach ($rel in $rels) {
                 [string] $newBranch = BuildBranchName $ticket $rel
             
-                PrintMsg "`n$newBranch"
+                PrintMsg "`n${newBranch}"
                 [bool] $alreadyCreatedOnLocals = (ArrayContainsValue $localCreatedBranches $newBranch)
                 if (-not $alreadyCreatedOnLocals) {
                     PrintMsg "   Creating on LOCALS..."
@@ -71,7 +71,7 @@ function c ([string] $ticketsCsv, [string] $superfluousParam) {
                             if ($LASTEXITCODE -ne 0) {
                                 if ($gitResult.Contains("not a valid object name")) {
                                     PrintMsg "      '$rel' is not recognized on REMOTES too."
-                                    $gitResult = "'$rel' is misspelled in the "
+                                    $gitResult = "'$rel' doesn't exist. Check its spelling in the "
                                     $gitResult += if ($rel -eq $DEV_REL) { "DEV_REL constant.`n" } else { "DEFAULT_BACKPORT_RELS constant.`n" }
                                 }
                             } else {
@@ -209,10 +209,9 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
             if ($LASTEXITCODE -ne 0) {
                 $failedRel = $backportRel
                 if ($gitResult.Contains("The previous cherry-pick is now empty, possibly due to conflict resolution")) {
-                    PrintMsg "      Cherry-pick is skipped since commit ${commitHash} has already been cherry-picked into this branch."
-                    $relsBackportedPreviously += $backportRel
+                    PrintMsg "      The cherry-pick is skipped since commit ${commitHash} has already been cherry-picked into this branch."
                     # Don't "continue" - proceed to Pushing. Most probably, the cherry-pick is already pushed.
-                    # However, communication with Git could be lost on the previous run after cherry-pick but before push. In this scenario, we still need to push.
+                    # However, comminication with Git could be lost on the previous run after cherry-pick but before push. In this scenario, we still need to push.
                 } elseif ($gitResult.Contains("conflict")) {
                     throw "Conflict on backporting into ${backportRel}."
                 } elseif ($gitResult.Contains("bad revision")) {
@@ -221,7 +220,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
                     # Abort the cherry pick to avoid this error on the next repo pull:
                     # "You have not concluded your cherry-pick (CHERRY_PICK_HEAD exists). Please, commit your changes before you merge."
                     git cherry-pick --abort
-                    throw "The cherry-pick failed:`n`n${gitResult}`n`nThe cherry-pick is aborted. Re-run the backport." 
+                    throw "The cherry-pick into ${targetFeatBranch} failed:`n`n${gitResult}"
                 }
             }
 
@@ -231,20 +230,23 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
                 $failedRel = $backportRel
                 if ($gitResult.Contains("conflict")) {
                     throw "Conflict on backporting into ${backportRel}."
-                } elseif ($gitResult.Contains("everything up-to-date")) {
-                    PrintMsg "      Push is skipped since the cherry-pick has already been pushed into this branch."
-                    continue
                 } else {
                     git cherry-pick --abort
-                    throw "The push failed:`n`n${gitResult}`n`nThe cherry-pick is aborted. Re-run the backport." 
+                    throw "The push of the ${targetFeatBranch} cherry-pick failed:`n`n${gitResult}"
                 }
+            }
+
+            if ($gitResult.Contains("Everything up-to-date")) {
+                PrintMsg "      The push is skipped since this cherry-pick has already been pushed."
+                $relsBackportedPreviously += $backportRel
+                continue
             }
             
             $prCreationUrls += BuildPrCreationUrl -rel $backportRel -featBranch $targetFeatBranch
             $relsBackportedByThisRun += $backportRel
         } # foreach ($backportRel in $backportRels)
         
-        $msg = if ($relsBackportedByThisRun.Count -gt 0) { "${ticket} is backported." } else { "No backports were done for ${ticket}." }
+        $msg = if ($relsBackportedByThisRun.Count -gt 0) { "${ticket} is backported." } else { "No backports were done for ${ticket} by this 'b' command execution." }
         DisplaySuccessMsg $msg
     } catch {
         $msg = $_.Exception.Message
@@ -256,18 +258,17 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
             $msg += "`n`nDespite the ${whatHappened} in ${failedRel}, the commit was successfully backported into:`n`n$(ArrayToNlsv $relsBackportedByThisRun)"
         }
 
-        if ($whatHappened -eq "conflict") {
-            $msg += "`n`nResolve the conflict in a Git client app, complete the backport into ${failedRel} and create a pull request there."
+        $msg += "`n`nResolve the ${whatHappened} in a Git client app"
+        $msg += if ($whatHappened -eq "conflict") { ", complete the backport into ${failedRel} and create a pull request there." } esle { "." }
 
-            [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
-            if ($failedRelIsLast) {
-                $msg += "`n`nThe failed ${failedRel} release is the last one to beckport into, no need to re-run this script again.`n"
-            } else {
-                [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
-                $msg += "`n`nThen, complete the remaining backport"
-                if ($remainingRels.Count -gt 1) { $msg += "s" }
-                $msg += ":`n`nb ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)`n"
-            }
+        [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
+        if ($failedRelIsLast) {
+            $msg += "`n`nThe failed ${failedRel} release is the last one to beckport into, so no need to run this script again.`n"
+        } else {
+            [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
+            $msg += "`n`nThen, complete the remaining backport"
+            if ($remainingRels.Count -gt 1) { $msg += "s" }
+            $msg += ":`n`nb ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)`n"
         }
 
         DisplayErrorMsg $msg $whatHappened.ToUpper()
