@@ -51,7 +51,7 @@ b ABCD-11111 da0b7e4 rel1,rel2,rel3
 HOW TO OBTAIN THE COMMIT HASH:
 
 In the DEV Pull Request, find (Ctrl+F) 'merged commit' - you will see '[your_name] merged commit [commit_hash] into [release]'.
-Tip: immediately after creating the DEV Pull Request, grab its commit hash and run the 'b' command.
+Tip: immediately after squashing & merging the DEV Pull Request, copy its commit hash and run the 'b' command.
 
 CONFIRMATION MESSAGE
 
