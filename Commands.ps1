@@ -259,7 +259,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
         }
 
         $msg += "`n`nResolve the ${whatHappened} in a Git client app"
-        $msg += if ($whatHappened -eq "conflict") { ", complete the backport into ${failedRel} and create a pull request there." } esle { "." }
+        $msg += if ($whatHappened -eq "conflict") { ", complete the backport into ${failedRel} and create a pull request there." } else { "." }
 
         [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
         if ($failedRelIsLast) {
