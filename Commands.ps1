@@ -263,7 +263,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
 
         [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
         if ($failedRelIsLast) {
-            $msg += "`n`nThe failed ${failedRel} release is the last one to beckport into, so no need to run this script again.`n"
+            $msg += "`n`nThe failed ${failedRel} release is the last one to backport into, so no need to run this script again.`n"
         } else {
             [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
             $msg += "`n`nThen, complete the remaining backport"
