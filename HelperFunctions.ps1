@@ -505,7 +505,7 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
     [string] $templateFolderPath = "${TICKETS_FOLDER_PATH}\XXXXX"
     [bool]   $templateFolderExists = Test-Path -Path $templateFolderPath -PathType Container
     if (-not $templateFolderExists) {
-        # ...create it:
+        # ...then create it:
         New-Item -Path $templateFolderPath -ItemType Directory -Force | Out-Null
 
         # Also, create the XXXXX.txt file within it:
@@ -515,8 +515,10 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
         Set-Content -Path "${templateFolderPath}\XXXXX.txt" -Value $fileContent
 
         [string] $msg = "The ${templateFolderPath} folder is created.`n" +
-                        "It will be used as a template to automatically create a working folder for each new ticket.`n" +
-                        "You can add files and folders to it, they will be cloned too.`n" +
+                        "It will be used as a template when the working folder is createed for a new ticket.`n" +
+                        "You can add files and subfolders to it, they will be cloned too.`n`n" +
+                        "The folder contains the XXXXX.txt template file.`n" +
+                        "Change its content according to your needs.`n`n" +
                         "This message will not be displayed again."
         DisplaySuccessMsg $msg
     }
