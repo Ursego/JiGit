@@ -5,6 +5,7 @@
 
 [bool] $Global:DISPLAY_ERROR_POPUP = $true
 [bool] $Global:DISPLAY_SUCCESS_POPUP = $false
+[bool] $Global:CONFIRM_CREATING_BRANCHES = $false # reminds the WORKING_REPO so make it true if you work switching between different repos
 [bool] $Global:CONFIRM_DELETING_BRANCHES = $true
 [bool] $Global:CREATE_BACKPORT_PRS = $true # $false -> after backports, print the PR creation URLs on the screen instead of opening them in the browser
 [string] $Global:TICKETS_FOLDER_PATH = "" # OPTIONAL # see _______ReadMe_______.txt >>> "FOLDERS FOR TICKETS' ARTEFACTS"
