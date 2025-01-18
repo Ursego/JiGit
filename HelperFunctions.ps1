@@ -128,6 +128,9 @@ function ValidateCreate () {
         }
     } elseif (IsEmpty $DEFAULT_BACKPORT_RELS_CSV) {
         $msg = "DEFAULT_BACKPORT_RELS_CSV is empty.`n`nDo you want to continue and create only the DEV branch (under ${DEV_REL})?"
+    } elseif ($CONFIRM_CREATING_BRANCHES) {
+        [string[]] $allRels = GetAllRelsFromSettings
+        $msg = "You are going to create branches in $($WORKING_REPO.ToUpper()) for:`n`n$(ArrayToNlsv $allRels)`n`nDo you want to continue?"
     }
     if ((IsPopulated $msg) -and (UserRepliedNo $msg)) {
         PrintMsg "`nThe branches creation is aborted.`n"
