@@ -1,9 +1,10 @@
 ###################################################################################################################################################
-# The file contains the scripts for 3 the Git Automation commands:
+# The file contains the scripts for the Git Automation commands:
 #
 # c - "C"reate Branches
 # b - "B"ackport Commit
 # d - "D"elete Branches
+# s - Open the "S"ettings file
 #
 # The details are in _______ReadMe_______.txt
 ###################################################################################################################################################
@@ -14,95 +15,86 @@
 # The "C"reate Branches script
 ###################################################################################################################################################
 
-function c ([string] $ticketsCsv, [string] $superfluousParam) {
+function c ([string] $ticket) {
     [string] $msg
     [string] $msgTitle
-    [bool]   $firstIteration = $true
+    [bool]   $ticketFolderCreated = $false
     [bool]   $atLeastOneBranchIsPublishedByThisRun = $false
 
     try {
         Clear-Host
-        if (IsPopulated $superfluousParam) {
-            throw "The '${superfluousParam}' parameter is superfluous.`n" +
-                    "Pass only one parameter - the ticket number`nor a comma-separated list of the ticket numbers (with no spaces)."
-        }
         ValidateSettings
-        ValidateCreate
+        $ticket = AcceptFromUserIfNotProvided $ticket "Enter the ticket number"
+        Clear-Host
+        $ticket = AddPrefixIfNotProvided $ticket
+        ValidateCreate $ticket
         SwitchToWorkingRepo
 
-        $ticketsCsv = AcceptFromUserIfNotProvided $ticketsCsv "Enter the tickets numbers for which you want to create branches (separated by comma)"
-        $ticketsCsv = ($ticketsCsv -replace ' ', ',') # if a CSV is passed with no quote marks, PowerShell replaces the commas with spaces - revert that change
-        [string[]] $tickets = CsvToArray $ticketsCsv
-        [string[]] $rels = GetAllRelsFromSettings
-
-        #throw "Going to create branches:`n'${tickets}'`n'${rels}'" #dbg - uncomment to test
-
         Clear-Host
-        PrintMsg "####### CREATING BRANCHES #######"
+        PrintMsg "####### CREATING BRANCHES FOR ${ticket} #######`n"
+
+        [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
+        [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
+        [string[]] $rels = CsvToArray $RELS_CSV
+        
+        #throw "Going to create branches for:`n'${rels}'" #dbg - uncomment to test
+
+        PrintMsg "Pulling $($WORKING_REPO.ToUpper())..."
+        [string] $gitResult = git pull 2>&1 # 2>&1 - don't throw an exception, just return the error message and make $LASTEXITCODE other than zero
+        if ($LASTEXITCODE -ne 0) {
+            throw "Cannot pull $($WORKING_REPO.ToUpper()).`n`n${gitResult}"
+        }
 
         # -----------------------------------------------------------------------------------------------------------------------------------------
         # THE MAIN CREATION LOGIC:
         # -----------------------------------------------------------------------------------------------------------------------------------------
 
-        foreach ($ticket in $tickets) {
-            $ticket = AddPrefixIfNotProvided $ticket
-
-            PrintMsg "`n----------- ${ticket} -----------`n"
-
-            [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
-            [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket -gitFetch $firstIteration
-            if ($firstIteration) {
-                PrintMsg ""
-                $firstIteration = $false
+        foreach ($rel in $rels) {
+            [string] $newBranch = BuildBranchName $ticket $rel
+        
+            PrintMsg "`n${newBranch}"
+            [bool] $alreadyCreatedOnLocals = (ArrayContainsValue $localCreatedBranches $newBranch)
+            if (-not $alreadyCreatedOnLocals) {
+                PrintMsg "   Creating on LOCALS..."
+                [string] $gitResult = git branch $newBranch $rel 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    if ($gitResult.Contains("not a valid object name")) {
+                        PrintMsg "      '$rel' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
+                        [string] $gitResult = git branch $rel "origin/${rel}" 2>&1
+                        if ($LASTEXITCODE -ne 0) {
+                            if ($gitResult.Contains("not a valid object name")) {
+                                PrintMsg "      '$rel' is not recognized on REMOTES too."
+                                $gitResult = "'$rel' doesn't exist. Check its spelling in the RELS_CSV constant in ${SETTINGS_FILE}.`n"
+                            }
+                        } else {
+                            PrintMsg "      '$rel' is downloaded, creating the branch on LOCALS..."
+                            [string] $gitResult = git branch $newBranch $rel 2>&1
+                            if ($LASTEXITCODE -eq 0) { $gitResult = $null } # on success, don't throw an error
+                        }
+                    }
+                    if ($gitResult) { throw "Cannot create $newBranch on LOCALS.`n`n${gitResult}" }
+                }
+            } else {
+                PrintMsg "   Creating on LOCALS is skipped since it already exists locally."
             }
 
-            foreach ($rel in $rels) {
-                [string] $newBranch = BuildBranchName $ticket $rel
-            
-                PrintMsg "`n${newBranch}"
-                [bool] $alreadyCreatedOnLocals = (ArrayContainsValue $localCreatedBranches $newBranch)
-                if (-not $alreadyCreatedOnLocals) {
-                    PrintMsg "   Creating on LOCALS..."
-                    [string] $gitResult = git branch $newBranch $rel 2>&1 # 2>&1 - don't throw an exception, just return the error message and make $LASTEXITCODE other than zero
-                    if ($LASTEXITCODE -ne 0) {
-                        if ($gitResult.Contains("not a valid object name")) {
-                            PrintMsg "      '$rel' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
-                            [string] $gitResult = git branch $rel "origin/${rel}" 2>&1
-                            if ($LASTEXITCODE -ne 0) {
-                                if ($gitResult.Contains("not a valid object name")) {
-                                    PrintMsg "      '$rel' is not recognized on REMOTES too."
-                                    $gitResult = "'$rel' doesn't exist. Check its spelling in the "
-                                    $gitResult += if ($rel -eq $DEV_REL) { "DEV_REL constant.`n" } else { "DEFAULT_BACKPORT_RELS constant.`n" }
-                                }
-                            } else {
-                                PrintMsg "      '$rel' is downloaded, creating the branch on LOCALS..."
-                                [string] $gitResult = git branch $newBranch $rel 2>&1
-                                if ($LASTEXITCODE -eq 0) { $gitResult = $null } # on success, don't throw an error
-                            }
-                        }
-                        if ($gitResult) { throw "Cannot create $newBranch on LOCALS.`n`n${gitResult}" }
-                    }
-                } else {
-                    PrintMsg "   Creating on LOCALS is skipped since it already exists locally."
+            [bool] $alreadyPublished = (ArrayContainsValue $remoteCreatedBranches $newBranch)
+            if (-not $alreadyPublished) {
+                PrintMsg "   Publishing to REMOTES..."
+                [string] $gitResult = git push -u origin $newBranch 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Cannot publish $newBranch.`n`n${gitResult}"
                 }
+                $atLeastOneBranchIsPublishedByThisRun = $true
+            } else {
+                PrintMsg "   Publishing to REMOTES is skipped since it's already published."
+            }
 
-                [bool] $alreadyPublished = (ArrayContainsValue $remoteCreatedBranches $newBranch)
-                if (-not $alreadyPublished) {
-                    PrintMsg "   Publishing to REMOTES..."
-                    [string] $gitResult = git push -u origin $newBranch 2>&1 # place [string] before each population of $gitResult, otherwise .Contains won't work
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Cannot publish $newBranch.`n`n${gitResult}"
-                    }
-                    $atLeastOneBranchIsPublishedByThisRun = $true
-                } else {
-                    PrintMsg "   Publishing to REMOTES is skipped since it's already published."
-                }
-
-                if ($rel = $DEV_REL) {
-                    CreateTicketFolder $ticket $newBranch
-                }
-            } # foreach ($rel in $rels)
-        } # foreach ($ticket in $tickets)
+            if (-not ($ticketFolderCreated)) {
+                CreateTicketFolder $ticket $newBranch
+                $ticketFolderCreated = $true
+            }
+        } # foreach ($rel in $rels)
 
         if ($atLeastOneBranchIsPublishedByThisRun) {
             [string[]] $reposToRefresh = (CsvToArray $REPOS_TO_REFRESH_CSV)
@@ -126,24 +118,18 @@ function c ([string] $ticketsCsv, [string] $superfluousParam) {
 # The "B"ackport Commit script
 ###################################################################################################################################################
 
-function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [string] $superfluousParam) {
+function b ([string] $ticket, [string] $commitHash) {
     [string]   $msg
     [string]   $prompt
     [string]   $failedRel
-    [string[]] $backportRels = @()
     [string[]] $relsBackportedByThisRun = @()
     [string[]] $relsBackportedPreviously = @()
     [string[]] $prCreationUrls = @()
 
     try {
         Clear-Host
-        if (IsPopulated $superfluousParam) {
-            throw "The '${superfluousParam}' parameter is superfluous.`n"+
-                    "Pass up to 3 parameters - the ticket number,`nthe commit hash and a comma-separated list`nof the backport releases (with no spaces)."
-        }
         ValidateSettings
         SwitchToWorkingRepo
-
         $ticket = AcceptFromUserIfNotProvided $ticket "Enter the ticket you want to backport"
         Clear-Host
         $ticket = AddPrefixIfNotProvided $ticket
@@ -157,20 +143,12 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
         $commitHash = AcceptFromUserIfNotProvided $commitHash $prompt
         Clear-Host
 
-        [bool] $backportRelsArePassedAsParam = (IsPopulated $backportRelsCsv)
-        if ($backportRelsArePassedAsParam) {
-            $backportRelsCsv = $backportRelsCsv.Trim() -replace ' ', ',' # if a CSV is passed with no quote marks, PowerShell replaces the commas with spaces - revert that change
-            $backportRels = CsvToArray $backportRelsCsv
-            $backportRels = $backportRels | Select-Object -Unique
-        } else {
-            $backportRels = GetDefaultBackportRels
-        }
-        
-        PrintMsg "####### BACKPORTING COMMIT ${commitHash} #######"
-
-        ValidateBackport $ticket $commitHash $backportRels $backportRelsArePassedAsParam
-
+        [string[]] $backportRels = GetBackportRels
+        ValidateBackport $ticket $commitHash $backportRels
         #throw "The final backportRels:`n${backportRels}" #dbg - uncomment to test
+        
+        Clear-Host
+        PrintMsg "####### BACKPORTING COMMIT ${commitHash} #######"
 
         PrintMsg "`nPulling $($WORKING_REPO.ToUpper())..."
         [string] $gitResult = git pull 2>&1
@@ -180,14 +158,21 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
             git cherry-pick --abort
             [string] $gitResult = git pull 2>&1
             if ($LASTEXITCODE -ne 0) {
-                throw "Cannot pull $($WORKING_REPO.ToUpper()).`n`n${gitResult}`n`nResolve the issue in a Git client app and re-run the backport script.`n"
+                throw "Cannot pull $($WORKING_REPO.ToUpper()).`n`n${gitResult}"
             }
         }
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -eq $SILENTLY_HALT) { return }
+        DisplayErrorMsg $msg
+        return
+    }
 
-        # -----------------------------------------------------------------------------------------------------------------------------------------
-        # THE MAIN BACKPORT LOGIC:
-        # -----------------------------------------------------------------------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------------------------------------------------
+    # THE MAIN BACKPORT LOGIC:
+    # -----------------------------------------------------------------------------------------------------------------------------------------
 
+    try {
         foreach ($backportRel in $backportRels) {
             [string] $targetFeatBranch = BuildBranchName $ticket $backportRel
             PrintMsg "`nTARGET: ${targetFeatBranch}"
@@ -263,12 +248,11 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
 
         [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
         if ($failedRelIsLast) {
-            $msg += "`n`nThe failed ${failedRel} release is the last one to backport into, so no need to run this script again.`n"
+            $msg += "`n`nThe failed ${failedRel} was the last release to backport into.`n"
         } else {
             [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
-            $msg += "`n`nThen, complete the remaining backport"
-            if ($remainingRels.Count -gt 1) { $msg += "s" }
-            $msg += ":`n`nb ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)`n"
+            $msg += "`n`nThen, complete the remaining backport(s) by running the same command (it will skip the successfully backported releases):`n`nb ${ticket} ${commitHash}"
+            $msg += "n`nTo save time, before that, you can open the Settings file by running the 's' command and change RELS_CSV to '$(GetDevRel),$(ArrayToCsv $remainingRels)'`n"
         }
 
         DisplayErrorMsg $msg $whatHappened.ToUpper()
@@ -291,7 +275,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv, [
 # The "D"elete Branches script
 ###################################################################################################################################################
 
-function d ([string] $ticket, [string] $superfluousParam) {
+function d ([string] $ticket) {
     [string]   $msg
     [bool]     $atLeastOneBranchIsDeleted = $false
     [string[]] $undeletedBranches = @()
@@ -300,19 +284,15 @@ function d ([string] $ticket, [string] $superfluousParam) {
 
     try {
         Clear-Host
-        if (IsPopulated $superfluousParam) {
-            throw "The '${superfluousParam}' parameter is superfluous.`nPass only one parameter - the ticket number."
-        }
-        #if (IsPopulated $superfluousParam) { throw "Pass only one parameter - the ticket number." }
         ValidateSettings
         SwitchToWorkingRepo
 
         $ticket = AcceptFromUserIfNotProvided $ticket "Enter the ticket to delete its branches"
         Clear-Host
         $ticket = AddPrefixIfNotProvided $ticket
-        PrintMsg "####### DELETING BRANCHES #######"
         ValidateDelete $ticket
-        PrintMsg ""
+        Clear-Host
+        PrintMsg "####### DELETING BRANCHES OF ${ticket} #######`n"
 
         [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
         [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
@@ -331,21 +311,13 @@ function d ([string] $ticket, [string] $superfluousParam) {
             PrintMsg "`n${branchToDelete}"
 
             if ($branchToDelete -eq $checkedOutBranch) {
-                [string] $anyRel = GetAnyRelFromSettings
-                if (IsEmpty $anyRel) {
-                    throw "${branchToDelete} is currently checked-out in $($WORKING_REPO.ToUpper()).`n`n" +
-                            "To enable its deletion, check out any other branch and re-run:`n`n" +
-                            "d ${ticket}`n"
-                }
+                [string] $devRel = GetDevRel
 
                 $msg = "`n   This branch is currently checked-out in $($WORKING_REPO.ToUpper()).`n" +
-                        "   Checking out another branch (${anyRel}) in order to enable the deletion...`n`n" +
-                        "   If you will get 'Please commit your changes or stash them before you switch branches',`n" +
-                        "   resolve the issue in a Git client app and re-run:`n" +
-                        "   d ${ticket}`n"
+                         "   Checking out another branch (${devRel}) in order to enable the deletion..."
                 PrintMsg $msg
-                [string] $gitResult = git checkout $anyRel 2>&1
-                if ($LASTEXITCODE -ne 0) { throw "Cannot check out ${anyRel}.`n`n${gitResult}" }
+                [string] $gitResult = git checkout $devRel 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "Cannot check out ${devRel}.`n`n${gitResult}`n`nCheck out another branch in a Git client app, and re-run:`nd ${ticket}`n" }
             }
 
             if (ArrayContainsValue $localCreatedBranches $branchToDelete) {
@@ -416,3 +388,11 @@ function d ([string] $ticket, [string] $superfluousParam) {
         DisplayErrorMsg $msg "ERROR"
     }
 } # d
+
+###################################################################################################################################################
+# Open the "S"ettings file
+###################################################################################################################################################
+
+function s () {
+    Start-Process -FilePath $SETTINGS_FILE
+} # s

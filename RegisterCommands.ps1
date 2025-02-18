@@ -1,5 +1,5 @@
 ###################################################################################################################################################
-# This script makes the 'c', 'b' and 'd' commands available by registering them in your PowerShell profile file.
+# This script makes the 'c', 'b', 'd' and 's' commands available by registering them in your PowerShell profile file.
 # You can obtain that file's path by running $PROFILE in PowerShell.
 # If the file doesn't exist, the script creates it.
 # To run the script, paste its full path to PowerShell and press Enter.
@@ -20,13 +20,13 @@ try {
     $fragment = ". $PSScriptRoot\Commands.ps1"
     $fragmentAlreadyInProfile = ($profileFileContent -match [regex]::Escape($fragment))
     if ($fragmentAlreadyInProfile) {
-        Write-Host "SUCCESS! The 'c', 'b' and 'd' commands are available."
+        Write-Host "SUCCESS! The 'c', 'b', 'd' and 's' commands are available."
         return
     }
 
     Add-Content -Path $PROFILE -Value $fragment
 
-    $prompt = "SUCCESS! The 'c', 'b' and 'd' commands will be available after you restart PowerShell.`r`nDo you want to restart now? Enter y or n"
+    $prompt = "SUCCESS! The 'c', 'b', 'd' and 's' commands will be available after you restart PowerShell.`r`nDo you want to restart now? Enter y or n"
     $userAnswer = Read-Host $prompt
     if ($userAnswer.ToLower() -eq 'y') {
         $currentProcessID = $PID

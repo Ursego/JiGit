@@ -1,53 +1,52 @@
 ###################################################################################################################################################
 # The file contains all the customizable stuff. No vars or constants in OTHER files are allowed to be changed by the user!
-# Any change in the constants is in effect immediately, with no need to restart PowerShell.
+# Any change in the constants is in effect immediately after saving the file, you don't need to restart PowerShell.
 ###################################################################################################################################################
 
-[bool] $Global:DISPLAY_ERROR_POPUP = $true
-[bool] $Global:DISPLAY_SUCCESS_POPUP = $false
-[bool] $Global:CONFIRM_CREATING_BRANCHES = $false # reminds the WORKING_REPO so make it true if you work switching between different repos
-[bool] $Global:CONFIRM_DELETING_BRANCHES = $true
+[bool] $Global:CONFIRM_DELETING_BRANCHES = $false
 [bool] $Global:CREATE_BACKPORT_PRS = $true # $false -> after backports, print the PR creation URLs on the screen instead of opening them in the browser
 [string] $Global:TICKETS_FOLDER_PATH = "" # OPTIONAL # see _______ReadMe_______.txt >>> "FOLDERS FOR TICKETS' ARTEFACTS"
-[string] $Global:DEFAULT_TICKET_PREFIX = "" # OPTIONAL # the most frequently used ticket prefix (with no dash) to be used if digits only are entered
-[int] $DIGITS_IN_TICKET_NUM = 5 # the quantity of digits in ticket numbers
+[string] $Global:DEFAULT_TICKET_PREFIX = "" # OPTIONAL # the most frequent ticket prefix (with no dash) to be used if digits only are entered
+[int] $Global:DIGITS_IN_TICKET_NUM = 5
 
 ###################################################################################################################################################
 # Releases:
 ###################################################################################################################################################
 
-# The DEV release (base branch) into which you normally commit your changes:
-[string] $Global:DEV_REL = "" # OPTIONAL
-
-# The releases (base branches) into which you normally backport (the elements order defines the backports order):
-[string] $Global:DEFAULT_BACKPORT_RELS_CSV = "" # OPTIONAL (like "rel1,rel2,rel3")
-
-# REMARKS:
-# 'c' creates branches for all the releases in DEV_REL & DEFAULT_BACKPORT_RELS_CSV.
-# 'b' backports into all the releases in DEFAULT_BACKPORT_RELS_CSV (if the releases are not passes to it as a parameter).
-# 'b' doesn't work with DEV_REL - the actual backport source release is defined by the commit hash.
-# 'd' doesn't work with DEV_REL & DEFAULT_BACKPORT_RELS_CSV - it deletes all the ticket's branches which actually exist.
+# A comma-separated list of the releases (base branches).
+# The first is the DEV release (mandatory), the others are backport releases (optional).
+# Example: "dev-rel,first-backport-rel,second-backport-rel,third-backport-rel"
+$Global:RELS_CSV = switch (1) { # change the number to the number of the set you want to use
+  1 { "dev-rel,first-backport-rel,second-backport-rel,third-backport-rel" } # the standard set
+  2 { "another-dev-rel,fourth-backport-rel" } # another standard set
+  3 { "dev-rel,second-backport-rel,third-backport-rel" } # to re-run 'b' after the backport into first-backport-rel failed
+  4 { "dev-rel,third-backport-rel" } # to re-run 'b' after the backport into second-backport-rel failed
+}
 
 ###################################################################################################################################################
 # Repositories:
 ###################################################################################################################################################
 
 # The URL of the GitHub server repository WITHOUT the .git extension.
-# For example, if the URL is  "https://github.com/my-repo.git", make the constant "https://github.com/my-repo":
+# For example, if the URL is  "https://github.com/my-repo.git", makse the constant "https://github.com/my-repo":
 [string] $Global:REMOTE_GIT_REPO_URL = ""
 
 # The full path of your local repositories folder (with NO slash at the end, like "C:\GitHub"):
 [string] $Global:GIT_FOLDER_PATH = ""
 
 # The name of the folder (under GIT_FOLDER_PATH) with the repository you normally use for commits and backports:
-[string] $Global:WORKING_REPO = ""
+[string] $Global:WORKING_REPO = switch (1) { # change the number to the number of the repo you want to use
+  1 { "repo-one" }
+  2 { "repo-two" }
+  3 { "repo-three" }
+}
 
 # Repos other than working which you want to refresh:
 #   after creating branches (to download their remote/ pointers), and
 #   after deleting branches (to prune their remote/ pointers).
 # Refreshing takes time, but we usually don't need the remote/ pointers in repos other than working (if you need them one day, just Pull the repo).
 # So, consider declaring the constant blank to make 'c' and 'd' commands faster:
-[string[]] $Global:REPOS_TO_REFRESH_CSV = "" # OPTIONAL (like "repo1,repo2,repo3")
+[string[]] $Global:REPOS_TO_REFRESH_CSV = "" # OPTIONAL
 
 ###################################################################################################################################################
 # Jira integration:
@@ -62,4 +61,3 @@
 
 # Your lowercase first and last names joined, like "billgates" for Bill Gates. MUST (!) be the same as in branches names created through Jira:
 [string] $Global:DEVELOPER = ""
-

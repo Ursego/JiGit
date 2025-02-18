@@ -4,9 +4,10 @@ Add-Type -AssemblyName System.Windows.Forms
 
 [string] $DECORATIVE_LINE = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
 [string] $SILENTLY_HALT = "SILENTLY_HALT"
-[string] $TICKET_TYPE = "TYPE"
-[string] $TICKET_TITLE = "TITLE"
+[string] $ENV_VAR__TICKET_TYPE = "TYPE"
+[string] $ENV_VAR__TICKET_TITLE = "TITLE"
 [string] $SETTINGS_FILE = "${PSScriptRoot}\Settings.ps1"
+[string] $OPEN_SETTINGS_MSG = "`nYou can open the Settings file by running the 's' command."
 
 . "${SETTINGS_FILE}"
 
@@ -14,20 +15,18 @@ Add-Type -AssemblyName System.Windows.Forms
 # Functions to get releases & branches:
 ###################################################################################################################################################
 
-function GetDefaultBackportRels () {
-    return CsvToArray $DEFAULT_BACKPORT_RELS_CSV
-} # GetDefaultBackportRels
+function GetDevRel () {
+    return $RELS_CSV -split ',' | Select-Object -First 1
+} # GetDevRel
 
-function GetAllRelsFromSettings {
-    [string[]] $allRelsFromSettings = @()
-    if (IsPopulated $DEV_REL) {
-        $allRelsFromSettings = @($DEV_REL)
-    }
-    if (IsPopulated $DEFAULT_BACKPORT_RELS_CSV) {
-        $allRelsFromSettings += GetDefaultBackportRels
-    }
-    return $allRelsFromSettings
-} # GetAllRelsFromSettings
+function BackportRelExistsInSettings () {
+    return ($RELS_CSV.IndexOf(',') -gt 0)
+} # BackportRelExistsInSettings
+
+function GetBackportRels () {
+    if (-not (BackportRelExistsInSettings)) { return @() }
+    return CsvToArray $RELS_CSV.Substring($RELS_CSV.IndexOf(',') + 1)
+} # GetBackportRels
 
 function GetLocalCreatedBranches ([string] $ticket) {
     [string[]] $localCreatedBranches = git branch -l --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
@@ -38,15 +37,13 @@ function GetLocalCreatedBranches ([string] $ticket) {
     return $localCreatedBranches
 } # GetLocalCreatedBranches
 
-function GetRemoteCreatedBranches ([string] $ticket, [bool] $gitFetch = $true) {
-    if ($gitFetch) {
-        [string] $msg = "Fetching $($WORKING_REPO.ToUpper()) to download the remote branches latest info"
-        PrintMsg "${msg}..."
-        [string] $gitResult = git fetch --prune 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "${msg} failed:`n${gitResult}"
-        }
+function GetRemoteCreatedBranches ([string] $ticket) {
+    PrintMsg "Fetching $($WORKING_REPO.ToUpper())..."
+    [string] $gitResult = git fetch --prune 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Fetching $($WORKING_REPO.ToUpper()) failed:`n${gitResult}"
     }
+
     [string[]] $remoteCreatedBranches = git branch -r --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
         # Each returned branch name starts with "  origin/": "  origin/Rel1", "  origin/Rel2", "  origin/Rel3"
         $_.Trim("  origin/") # ==>> "Rel1", "Rel2", "Rel3"
@@ -72,12 +69,8 @@ function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport 
         }
 
     if (IsPopulated $err) {
-        $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`nPlease sync both the sets "
-        $err += if (IsPopulated $DEFAULT_BACKPORT_RELS_CSV) {
-            "by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
-        } else {
-            "in a Git client and/or Jira.`n"
-        }
+        $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`n" +
+               "Sync both the sets by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
         throw $err
     }
 
@@ -91,98 +84,77 @@ function GetRelsHavingBranches ([string] $ticket) {
     return $relsHavingBranches
 } # GetRelsHavingBranches
 
-
-function GetAnyRelFromSettings () {
-    if (IsPopulated $DEV_REL) { return $DEV_REL }
-    [string[]] $defaultBackportRels = GetDefaultBackportRels
-    if ($defaultBackportRels.Count -gt 0) { return $defaultBackportRels[0] }
-    return ""
-} # GetAnyRelFromSettings
-
 function AtLeastOneBranchIsCreatedFor ([string] $ticket) {
-    return (EnvVarExists $ticket $TICKET_TYPE)
+    return (EnvVarExists $ticket $ENV_VAR__TICKET_TYPE)
 } # AtLeastOneBranchIsCreatedFor
 
 ###################################################################################################################################################
 # Validation functions:
 ###################################################################################################################################################
 
-function ValidateCreate () {
-    if ((IsEmpty $DEV_REL) -and (IsEmpty $DEFAULT_BACKPORT_RELS_CSV)) {
-        throw "DEV_REL and DEFAULT_BACKPORT_RELS_CSV are empty.`nAt lease one of them is required to create a branch."
-    }
+function ValidateCreate ([string] $ticket) {
+    ValidateRelsCsv
+
+    [string[]] $fixVersions = GetFixVersions $ticket #???
+    [string[]] $relsFromSettings = CsvToArray $RELS_CSV
+    [string]   $relsFromSettingsNlsv = ArrayToNlsv $relsFromSettings
+    [string]   $relsFromSettingsPluralEnding = if ($relsFromSettings.Count -gt 1) { "es" } else { "" }
     
-    [string] $msg
-    if (IsEmpty $DEV_REL) {
-        $msg = "DEV_REL is empty.`n`n"
-        if (IsPopulated $TICKETS_FOLDER_PATH) {
-            $msg += "So, the ticket folder will NOT be created.`n" +
-                    "If you want it, click No and move at least one release`n" +
-                    "from DEFAULT_BACKPORT_RELS_CSV to DEV_REL.`n`n"
+    switch ($fixVersions.Count) {
+        $relsFromSettings.Count { $msg = $null } # success
+        0                       { $msg = "The ticket's 'Fix Version/s' field is empty." }
+        default                 { $msg = "The ticket's 'Fix Version/s':`n`n$(ArrayToNlsv $fixVersions)."
+                                  $msg += "`n`nIt seems like you need to create $($fixVersions.Count) branch"
+                                  $msg += if ($fixVersions.Count -gt 1) { "es." } else { "." }
         }
-        $msg += "Do you want to continue and create "
-        $msg += if ($DEFAULT_BACKPORT_RELS_CSV -match ",") {
-            "branches only for the next releases?`n`n$(ArrayToNlsv (GetDefaultBackportRels))"
-        } else {
-            "a branch only for ${DEFAULT_BACKPORT_RELS_CSV}?"
-        }
-    } elseif (IsEmpty $DEFAULT_BACKPORT_RELS_CSV) {
-        $msg = "DEFAULT_BACKPORT_RELS_CSV is empty.`n`nDo you want to continue and create only the DEV branch (under ${DEV_REL})?"
-    } elseif ($CONFIRM_CREATING_BRANCHES) {
-        [string[]] $allRels = GetAllRelsFromSettings
-        $msg = "You are going to create branches in $($WORKING_REPO.ToUpper()) for:`n`n$(ArrayToNlsv $allRels)`n`nDo you want to continue?"
     }
-    if ((IsPopulated $msg) -and (UserRepliedNo $msg)) {
-        PrintMsg "`nThe branches creation is aborted.`n"
+
+    $msg += if (IsPopulated $msg) {
+        "`n`nHowever, you requested to create $($relsFromSettings.Count) branch${relsFromSettingsPluralEnding}:" +
+        "`n`n${relsFromSettingsNlsv}" +
+        "`n`nDo you want to continue?"
+    } else {
+        "Looks good, $($relsFromSettings.Count) branch${relsFromSettingsPluralEnding} will be created under:" +
+        "`n`n${relsFromSettingsNlsv}" +
+        "`n`n$($relsFromSettings.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
+        "`n`nHowever, you might want to make sure that you are creating the CORRECT branch${relsFromSettingsPluralEnding} by reviewing the 'Fix Version/s':" +
+        "`n`n$(ArrayToNlsv $fixVersions)." +
+        "`n`nDo you want to continue?"
+    }
+
+    if (UserRepliedNo $msg "Creating branch${relsFromSettingsPluralEnding} for ${ticket} in $($WORKING_REPO.ToUpper())...") {
+        Clear-Host
+        PrintMsg "The creation of branch${relsFromSettingsPluralEnding} for ${ticket} is aborted.`n"
+        OpenSettingsFile
         throw $SILENTLY_HALT
     }
 } # ValidateCreate
 
-function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $backportRels, [bool] $backportRelsArePassedAsParam) {
-    function LetUserConfirm ($msg) {
-        if (IsEmpty $msg) { return }
-        if (UserRepliedYes $msg "Check the backport releases of ${ticket}") { return }
-        PrintMsg "`nThe backport of ${ticket} is aborted.`n"
-        throw $SILENTLY_HALT
-    }
+function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $backportRels) {
+    ValidateRelsCsv
 
     if ($commitHash -notmatch '^[0-9a-fA-F]{7,40}$') {
         throw "'${commitHash}' is a wrong commit hash.`nIt must be a 7 to 40 digits long hexadecimal number."
     }
-    
-    if ((-not $backportRelsArePassedAsParam) -and (IsEmpty $DEFAULT_BACKPORT_RELS_CSV)) {
-        throw "DEFAULT_BACKPORT_RELS_CSV is empty.`n`n" +
-                "It's required when you don't pass the backport releases as a parameter.`n`n" +
-                "Either populate DEFAULT_BACKPORT_RELS_CSV or pass the desired releases, like:`n`n" +
-                "b ${ticket} ${commitHash} rel1,rel2,rel3`n"
-    }
 
-    [string] $msg # in confirmation messages, blank denotes success ("don't display confirmation box")
+    if (-not (BackportRelExistsInSettings)) {
+        throw "The RELS_CSV constant in the Settings file has no backport releases.`n`n" +
+                "Run the 's' command to open the file, add the backport release(s) to RELS_CSV, and re-run the backport:`n`n" +
+                "b ${ticket} ${commitHash}`n"
+    }
     
     # Error message if the ticket has no feature branches at all:
     if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
-        $msg = "${ticket} has no feature branches to backport into."
-        if ($backportRelsArePassedAsParam) { $msg += " Make sure you passed a correct ticket number." }
-        throw $msg
-    }
-
-    # Confirmation message if the user passed a release which is not in $DEFAULT_BACKPORT_RELS_CSV:
-    if ($backportRelsArePassedAsParam) {
-        [string[]] $backportRelsNotInDefault = $backportRels | Where-Object { $_ -notin (GetDefaultBackportRels) }
-        $msg = switch ($backportRelsNotInDefault.Count) {
-            0       { $null } # success
-            1       { "$($backportRelsNotInDefault[0]) is not in DEFAULT_BACKPORT_RELS_CSV.`n`nAre you sure you want to backport into it?" }
-            default { "These releases are not in DEFAULT_BACKPORT_RELS_CSV:`n`n$(ArrayToNlsv $backportRelsNotInDefault)`n`nAre you sure you want to backport into them?" }
-        }
-        LetUserConfirm $msg
+        throw "${ticket} has no feature branches to backport into.`n"
     }
 
     [string[]] $fixVersions = GetFixVersions $ticket
     [int]      $backportFixVersionsCount = $fixVersions.Count - 1 # supposing one is the DEV release
     [string]   $backportRelsNlsv = ArrayToNlsv $backportRels
-    [string]   $pluralEnding = if ($backportRels.Count -gt 1) { "s" } else { "" }
+    [string]   $backportRelsPluralEnding = if ($backportRels.Count -gt 1) { "s" } else { "" }
+    [string]   $msg
     
-    # Confirmation messages to review the backports releases:
+    # Confirmation message to review the backports releases:
     switch ($backportFixVersionsCount) {
         $backportRels.Count { $msg = $null } # success
         -1                  { $msg = "The ticket's 'Fix Version/s' field is empty." }
@@ -192,57 +164,70 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
         }
     }
     $msg += if (IsPopulated $msg) {
-        "`n`nHowever, you are backporting into $($backportRels.Count) release${pluralEnding}:" +
+        "`n`nHowever, you requested to backport into $($backportRels.Count) release${backportRelsPluralEnding}:" +
         "`n`n${backportRelsNlsv}" +
         "`n`nDo you want to continue?"
     } else {
-        "Everything looks good, you are backporting into $($backportRels.Count) release${pluralEnding}:" +
+        "Looks good, you are backporting into $($backportRels.Count) release${backportRelsPluralEnding}:" +
         "`n`n${backportRelsNlsv}" +
         "`n`n$($backportRels.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
-        "`n`nHowever, you might want to make sure that you are backporting into the CORRECT release${pluralEnding}." +
-        "`n`n'Fix Version/s' (one of them is DEV):" +
+        "`n`nHowever, you might want to make sure that you are backporting into the CORRECT release${backportRelsPluralEnding}." +
+        "`n`n'Fix Version/s' (incluiding DEV):" +
         "`n`n$(ArrayToNlsv $fixVersions)." +
         "`n`nDo you want to continue?"
     }
-    LetUserConfirm $msg
     
+    if (UserRepliedNo $msg "Check the backport releases of ${ticket}") {
+        Clear-Host
+        PrintMsg "The backport of ${ticket} is aborted.`n"
+        OpenSettingsFile
+        throw $SILENTLY_HALT
+    }
+
     # Error message if the user is backporting into a release which has no feature branch:
     [string[]] $relsHavingBranches = GetRelsHavingBranches $ticket
     [string[]] $branchlessBackportRels = $backportRels | Where-Object { $_ -notin $relsHavingBranches }
     if ($branchlessBackportRels.Count -eq 1) {
         $msg = "You cannot backport into $($branchlessBackportRels[0]) since it has no feature branch. Run if you need to backport into it:" +
                 "`n`nc ${ticket}" +
-                "`nb ${ticket} ${commitHash}"
-        $msg += if ($backportRelsArePassedAsParam) { " $(ArrayToCsv $backportRels)`n" } else { "`n" }
+                "`nb ${ticket} ${commitHash}`n"
         throw $msg
     } elseif ($branchlessBackportRels.Count -gt 1) {
         $msg = "You cannot backport into these releases since they have no feature branches:" +
                 "`n`n$(ArrayToNlsv $branchlessBackportRels)" +
                 "`n`nRun if you need to backport into them:" +
                 "`n`nc ${ticket}" +
-                "`nb ${ticket} ${commitHash}"
-                $msg += if ($backportRelsArePassedAsParam) { " $(ArrayToCsv $backportRels)`n" } else { "`n" }
+                "`nb ${ticket} ${commitHash}`n"
         throw $msg
     }
 } # ValidateBackport
 
 function ValidateDelete ([string] $ticket) {
-    if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
-        throw "${ticket} has no branches to delete. Make sure you passed a correct ticket number."
+    [string] $msg = if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
+        "No branches exist for ${ticket}, nothing to delete.`n"
+    } elseif ($CONFIRM_DELETING_BRANCHES -and (UserRepliedNo "Are you sure you want to delete all the feature branches of ${ticket}?")) {
+        "The deletion of ${ticket} branches is aborted.`n"
+    } else {
+        $null
     }
-    if ($CONFIRM_DELETING_BRANCHES -and (UserRepliedNo "Are you sure you want to delete all the branches of ${ticket}?")) {
-        PrintMsg "`nThe deletion of ${ticket} branches is aborted.`n"
+    
+    if ($msg) {
+        Clear-Host
+        PrintMsg $msg
         throw $SILENTLY_HALT
     }
 } # ValidateDelete
 
+function ValidateRelsCsv {
+    if ($RELS_CSV -match '(^|,)\s*(,|$)') {
+        throw "Each release in the RELS_CSV constantmust be non-empty.${OPEN_SETTINGS_MSG}"
+    }
+}
+
 function ValidateSettings {
-    [string[]] $constants = @('DISPLAY_ERROR_POPUP', 'DISPLAY_SUCCESS_POPUP', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
-                                'TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM',
-                                'DEV_REL', 'DEFAULT_BACKPORT_RELS_CSV',
-                                'REMOTE_GIT_REPO_URL', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV',
-                                'JIRA_URL', 'JIRA_PAT', 'DEVELOPER')
-    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DEV_REL', 'DEFAULT_BACKPORT_RELS_CSV', 'REPOS_TO_REFRESH_CSV')
+    [string[]] $constants = @('CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS', 'TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM', 'RELS_CSV',
+                                'REMOTE_GIT_REPO_URL', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV', 'JIRA_URL', 'JIRA_PAT', 'DEVELOPER')
+    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'REPOS_TO_REFRESH_CSV')
     
     . "${SETTINGS_FILE}" # pick the latest settings (the user could change them during the current session)
     
@@ -250,10 +235,10 @@ function ValidateSettings {
         try {
             $constantVal = Get-Variable -Name $constant -ValueOnly -ErrorAction Stop
         } catch {
-            throw "Declare the ${constant} constant in ${SETTINGS_FILE}" # The error: "Cannot find a variable with the name '...'"
+            throw "Declare the ${constant} constant.${OPEN_SETTINGS_MSG}" # The error: "Cannot find a variable with the name '...'"
         }
         if ((IsEmpty $constantVal) -and -not ($optionals -contains $constant)) {
-            throw "Populate the ${constant} constant in ${SETTINGS_FILE}"
+            throw "Populate the ${constant} mandatory constant.${OPEN_SETTINGS_MSG}"
         }
     }
 } # ValidateSettings
@@ -272,7 +257,7 @@ function InvokeJiraApi ([string] $ticket) {
         [string] $err = $_.Exception.Message
         switch ($_.Exception.Response.StatusCode.value__) {
             404 { $err = "Ticket '${ticket}' doesn't exist." } # "Not Found"
-            401 { $err = "Wrong Jira PAT.`nFix the JIRA_PAT constant in ${SETTINGS_FILE}." } # "Unauthorized"
+            401 { $err = "Wrong Jira PAT.`nFix the JIRA_PAT constant.${OPEN_SETTINGS_MSG}" } # "Unauthorized"
         }
         throw $err
     }
@@ -282,43 +267,36 @@ function InvokeJiraApi ([string] $ticket) {
 function PopulateEnvVarsFromJira ([string] $ticket) {
     [bool] $alreadyRetrieved = (atLeastOneBranchIsCreatedFor $ticket)
     if ($alreadyRetrieved) { return }
-    PrintMsg "Getting ticket info from Jira..."
+    PrintMsg "Getting ticket's Type and Title from Jira..."
     [PSCustomObject] $jiraResponse = InvokeJiraApi $ticket
     [string] $ticketType = ($jiraResponse.fields.issuetype.name -replace ' ', '').ToLower() # "Contract Modification" > "contractmodification"
     if (IsEmpty $ticketType) { throw "The 'Type' field is empty in ${ticket}." }
-    SetEnvVar $ticket $TICKET_TYPE $ticketType
-    SetEnvVar $ticket $TICKET_TITLE $jiraResponse.fields.summary
+    SetEnvVar $ticket $ENV_VAR__TICKET_TYPE $ticketType
+    SetEnvVar $ticket $ENV_VAR__TICKET_TITLE $jiraResponse.fields.summary
     # To find a Jira field name, go to https://tylerjira.tylertech.com/rest/agile/latest/issue/CLT-78487 and find the field by its contents.
 } # PopulateEnvVarsFromJira
+
+function BuildBranchName ([string] $ticket, [string] $rel) {
+    PopulateEnvVarsFromJira $ticket
+    $ticketType = GetEnvVar $ticket $ENV_VAR__TICKET_TYPE
+    return "${DEVELOPER}/${rel}/${ticketType}/${ticket}"
+} # BuildBranchName
+
+function GetTicketTitle ([string] $ticket) {
+    PopulateEnvVarsFromJira $ticket
+    return GetEnvVar $ticket $ENV_VAR__TICKET_TITLE
+} # GetTicketTitle
 
 function GetFixVersions ([string] $ticket) {
     # Returns the ticket's 'Fix Version/s' as an array. It uses their Descriptions which pop up when you are hooviring (they are more informative and often contain the release name).
     # The Fix Version/s are not stored in an env var since 'b' must get the freshest version - the field could change after 'c' called PopulateEnvVarsFromJira (through BuildBranchName).
-    PrintMsg "`nGetting ticket's Fix Version/s from Jira for validating..."
+    PrintMsg "Getting ticket's Fix Version/s from Jira...`n"
     [PSCustomObject] $jiraResponse = InvokeJiraApi $ticket
     [string[]] $fixVersions = $jiraResponse.fields.fixVersions | ForEach-Object { $_.description }
     if (-not $fixVersions) { $fixVersions = @() } 
     return $fixVersions
 } # GetFixVersions
 
-###################################################################################################################################################
-# Branch name building functions:
-###################################################################################################################################################
-
-function BuildBranchName ([string] $ticket, [string] $rel) {
-    $ticketType = GetTicketType $ticket
-    return "${DEVELOPER}/${rel}/${ticketType}/${ticket}"
-} # BuildBranchName
-
-function GetTicketType ([string] $ticket){
-    PopulateEnvVarsFromJira $ticket
-    return GetEnvVar $ticket $TICKET_TYPE
-} # GetTicketType
-
-function GetTicketTitle ([string] $ticket) {
-    PopulateEnvVarsFromJira $ticket
-    return GetEnvVar $ticket $TICKET_TITLE
-} # GetTicketTitle
 
 ###################################################################################################################################################
 # Messages functions:
@@ -334,15 +312,14 @@ function DisplayPopup ([string] $msg, [string] $title) {
 
 function DisplaySuccessMsg ([string] $msg) {
     Write-Host "`n${DECORATIVE_LINE}`n${msg}`n${DECORATIVE_LINE}`n" -ForegroundColor Green
-    if ($DISPLAY_SUCCESS_POPUP) { DisplayPopup $msg "SUCCESS!!!" }
 } # DisplaySuccessMsg
 
 function DisplayErrorMsg ([string] $msg, [string] $msgTitle) {
     Write-Host "`n${DECORATIVE_LINE}`n${msg}`nThe operation is aborted.`n${DECORATIVE_LINE}`n" -ForegroundColor Red
-    if ($DISPLAY_ERROR_POPUP) { DisplayPopup $msg $msgTitle }
 } # DisplayErrorMsg
 
 function UserRepliedYes ([string] $msg, [string] $title = "Confirm") {
+    PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side (the message may be underneath it).`n"
     [DialogResult] $userReply = [MessageBox]::Show(
         $msg,
         $title,
@@ -388,7 +365,7 @@ function AddPrefixIfNotProvided ([string] $ticket) {
             throw "'${ticket}' is a wrong ticket name.`n" +
                     "It must start with an alphabetic prefix and a dash.`n" +
                     "To add the ability to pass the digits alone, populate`n" +
-                    "the DEFAULT_TICKET_PREFIX constant."
+                    "the DEFAULT_TICKET_PREFIX constant.${OPEN_SETTINGS_MSG}"
         }
         $ticket = "${DEFAULT_TICKET_PREFIX}-${ticket}"
     }
@@ -435,8 +412,8 @@ function CsvToArray ([string] $csv) {
     return @($csv -split ',' -ne '')
 } # CsvToArray
 
-function ArrayContainsValue ([string[]] $array, [string] $value) {
-    if (-not $array) { return $false } # prevent "-contains" from failing if the array is not instantiated, that's why this function was created
+function ArrayContainsValue ([string[]] $array, [string] $value) { # same as the -contains operator but checks is the array is instantiated, otherwise -contains fails
+    if (-not $array) { return $false }
     return ($array -contains $value)
 } # ArrayContainsValue
 
@@ -473,7 +450,7 @@ function EnvVarExists ([string] $ticket, [string] $key) { # reports if an env va
 
 function CleanUpEnvVars ([string] $ticket) {
     Get-ChildItem env: | Where-Object { $_.Name -like "${$DEVELOPER}*${ticket}*" } | ForEach-Object {
-	# Remove the var, making the change persistent across sessions and reboots:
+	    # Remove the var, making the change persistent across sessions and reboots:
         [System.Environment]::SetEnvironmentVariable($_.Name, $null, [System.EnvironmentVariableTarget]::User)
         # Remove the var from the current session:
         Remove-Item -Path "env:$($_.Name)" -ErrorAction SilentlyContinue
@@ -498,12 +475,14 @@ function BuildPrCreationUrl ([string] $rel, [string] $featBranch) {
     return "${REMOTE_GIT_REPO_URL}/compare/${rel}...${featBranch}?expand=1"
 } # BuildPrCreationUrl
 
+function OpenSettingsFile () {
+    if (UserRepliedYes "Do you want to open the Settings file and edit the releases?") {
+        Start-Process -FilePath $SETTINGS_FILE
+    }
+} # OpenSettingsFile
+
 function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______ReadMe_______.txt >>> "FOLDERS FOR TICKETS' ARTEFACTS")
     if (IsEmpty $TICKETS_FOLDER_PATH) { return }
-
-    [string] $newTicketFolderPath = "${TICKETS_FOLDER_PATH}\${ticket}"
-    [bool]   $newTicketFolderExists = Test-Path -Path $newTicketFolderPath -PathType Container
-    if ($newTicketFolderExists) { return }
 
     [string] $templateFolderPath = "${TICKETS_FOLDER_PATH}\XXXXX"
     [bool]   $templateFolderExists = Test-Path -Path $templateFolderPath -PathType Container
@@ -516,27 +495,36 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
                                 "Hi <write the tester name here>, ${JIRA_URL}/browse/_TICKET_NAME_ is ready for peer review.`n" +
                                 "_DEV_PR_CREATION_URL_"
         Set-Content -Path "${templateFolderPath}\XXXXX.txt" -Value $fileContent
-
+        
         [string] $msg = "The ${templateFolderPath} folder is created.`n" +
                         "It will be used as a template when the working folder is createed for a new ticket.`n" +
                         "You can add files and subfolders to it, they will be cloned too.`n`n" +
                         "The folder contains the XXXXX.txt template file.`n" +
-                        "Change its content according to your needs.`n`n" +
+                        "Change its content to fit to your needs.`n`n" +
                         "This message will not be displayed again."
         DisplaySuccessMsg $msg
     }
 
-    # Clone the XXXXX template folder naming it as the ticket:
-    Copy-Item -Path $templateFolderPath -Destination $newTicketFolderPath -Recurse -ErrorAction Stop
+    [string] $ticketTitle = GetTicketTitle $ticket
+    [string] $ticketTitleClean = $ticketTitle -replace '[][\\\/:*?"<>|]', '' # remove symbols prohibited in folders & files names (square brackets are allowed but make troubles with PS commands)
+    $ticketTitleClean = $ticketTitleClean -replace '\s{2,}', ' ' # If there are two or more spaces in a row, replace them with one space
+    #throw "ticketTitleClean=${ticketTitleClean}.txt"
+    [string] $ticketFolderPath = "${TICKETS_FOLDER_PATH}\${ticket} ${ticketTitleClean}"
+    [bool]   $ticketFolderExists = Test-Path -Path $ticketFolderPath -PathType Container
+    if ($ticketFolderExists) { return }
 
-    # Rename XXXXX.txt in the new folder to the ticket name:
-    Rename-Item -Path "${newTicketFolderPath}\XXXXX.txt" -NewName "${ticket}.txt"
+    # Clone the XXXXX template folder for this ticket:
+    Copy-Item -Path $templateFolderPath -Destination $ticketFolderPath -Recurse -ErrorAction Stop
+
+    # Rename XXXXX.txt in the new folder:
+    [string] $ticketFileName = "${ticket} ${ticketTitleClean}.txt"
+    Rename-Item -Path "${ticketFolderPath}\XXXXX.txt" -NewName $ticketFileName
 
     # In that txt file, substitute the placeholders with the actual values:
-    [string] $filePath = Join-Path -Path $TICKETS_FOLDER_PATH -ChildPath "${ticket}\${ticket}.txt"
+    [string] $filePath = Join-Path -Path $ticketFolderPath -ChildPath $ticketFileName
     [string] $fileContent = Get-Content $filePath -Raw
-    [string] $ticketTitle = GetTicketTitle $ticket
-    [string] $devPrCreationUrl = BuildPrCreationUrl $DEV_REL $branch
+    [string] $devRel = GetDevRel
+    [string] $devPrCreationUrl = BuildPrCreationUrl $devRel $branch
     $fileContent = $fileContent -replace '_TICKET_NAME_', $ticket
     $fileContent = $fileContent -replace '_TICKET_TITLE_', $ticketTitle
     $fileContent = $fileContent -replace '_DEV_PR_CREATION_URL_', $devPrCreationUrl
