@@ -28,7 +28,7 @@ RELS_CSV:
 
 The RELS_CSV constant must contain a comma-separated list of the releases (base branches).
 The first is the DEV release (mandatory), the others are backport releases (optional).
-Example: "dev-rel,first-backport-rel,second-backport-rel,third-backport-rel"
+Example: "dev-rel,bp-rel-1,bp-rel-2,bp-rel-3"
 
 ##################################################################################################################################
 COMMANDS DESCRIPTION:
@@ -70,7 +70,7 @@ Accepts the ticket's number and the source commit hash:
 b ABC-11111 aa11bb2
 
 Backports into all the releases in RELS_CSV other than the DEV release.
-For the example above, will backport into first-backport-rel, second-backport-rel and third-backport-rel.
+For the example above, will backport into bp-rel-1, bp-rel-2 and bp-rel-3.
 
 HOW TO OBTAIN THE COMMIT HASH:
 
