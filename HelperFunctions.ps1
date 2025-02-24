@@ -1,3 +1,9 @@
+###################################################################################################################################################
+# Auxiliary functions serving Commands.ps1
+###################################################################################################################################################
+# Developer: Michael Zuskin https://www.linkedin.com/in/zuskin/
+# This project on GitHub: https://github.com/Ursego/JiGit
+###################################################################################################################################################
 using namespace System.Windows.Forms
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -7,86 +13,13 @@ Add-Type -AssemblyName System.Windows.Forms
 [string] $ENV_VAR__TICKET_TYPE = "TYPE"
 [string] $ENV_VAR__TICKET_TITLE = "TITLE"
 [string] $SETTINGS_FILE = "${PSScriptRoot}\Settings.ps1"
-[string] $OPEN_SETTINGS_MSG = "`nYou can open the Settings file by running the 's' command."
+[string] $OPEN_SETTINGS_FILE_MSG = "`nYou can open the Settings file (${SETTINGS_FILE}) by running the 's' command."
 
-. "${SETTINGS_FILE}"
-
-###################################################################################################################################################
-# Functions to get releases & branches:
-###################################################################################################################################################
-
-function GetDevRel () {
-    return $RELS_CSV -split ',' | Select-Object -First 1
-} # GetDevRel
-
-function BackportRelExistsInSettings () {
-    return ($RELS_CSV.IndexOf(',') -gt 0)
-} # BackportRelExistsInSettings
-
-function GetBackportRels () {
-    if (-not (BackportRelExistsInSettings)) { return @() }
-    return CsvToArray $RELS_CSV.Substring($RELS_CSV.IndexOf(',') + 1)
-} # GetBackportRels
-
-function GetLocalCreatedBranches ([string] $ticket) {
-    [string[]] $localCreatedBranches = git branch -l --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
-        # Each returned branch name starts with "  " (if checked-out, then with "* "): "  Rel1", "* Rel2", "  Rel3"
-        $_.Trim("*").Trim() # ==>> "Rel1", "Rel2", "Rel3"
-    }
-    if (-not $localCreatedBranches) { $localCreatedBranches = @() }
-    return $localCreatedBranches
-} # GetLocalCreatedBranches
-
-function GetRemoteCreatedBranches ([string] $ticket) {
-    PrintMsg "Fetching $($WORKING_REPO.ToUpper())..."
-    [string] $gitResult = git fetch --prune 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Fetching $($WORKING_REPO.ToUpper()) failed:`n${gitResult}"
-    }
-
-    [string[]] $remoteCreatedBranches = git branch -r --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
-        # Each returned branch name starts with "  origin/": "  origin/Rel1", "  origin/Rel2", "  origin/Rel3"
-        $_.Trim("  origin/") # ==>> "Rel1", "Rel2", "Rel3"
-    }
-    if (-not $remoteCreatedBranches) { $remoteCreatedBranches = @() }
-    return $remoteCreatedBranches
-} # GetRemoteCreatedBranches
-
-function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport > GetRelsHavingBranches > GetCreatedBranches
-    [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
-    [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
-    if ($localCreatedBranches.Count -eq 0 -and $remoteCreatedBranches.Count -eq 0) { return @() }
-
-    [string] $err = 
-        if ($remoteCreatedBranches.Count -eq 0) {
-            "On REMOTES:`nNo branches exist`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
-        } elseif ($localCreatedBranches.Count -eq 0) {
-            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`nNo branches exist"
-        } elseif (Compare-Object $remoteCreatedBranches $localCreatedBranches) {
-            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
-        } else {
-            $null
-        }
-
-    if (IsPopulated $err) {
-        $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`n" +
-               "Sync both the sets by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
-        throw $err
-    }
-
-    return $remoteCreatedBranches
-} # GetCreatedBranches
-
-function GetRelsHavingBranches ([string] $ticket) {
-    [string[]] $createdBranches = GetCreatedBranches $ticket
-    if ($createdBranches.Count -eq 0) { return @() }
-    [string[]] $relsHavingBranches = $createdBranches | ForEach-Object { ExtractRelFromBranch $_ }
-    return $relsHavingBranches
-} # GetRelsHavingBranches
-
-function AtLeastOneBranchIsCreatedFor ([string] $ticket) {
-    return (EnvVarExists $ticket $ENV_VAR__TICKET_TYPE)
-} # AtLeastOneBranchIsCreatedFor
+if (Test-Path -Path $SETTINGS_FILE) {
+    . "${SETTINGS_FILE}"
+} else {
+    Write-Host "The file ${SETTINGS_FILE} is not found.`nTo use the Git Automation commands, restore the file and restart PowerShell.`n" -ForegroundColor Red
+}
 
 ###################################################################################################################################################
 # Validation functions:
@@ -220,14 +153,15 @@ function ValidateDelete ([string] $ticket) {
 
 function ValidateRelsCsv {
     if ($RELS_CSV -match '(^|,)\s*(,|$)') {
-        throw "Each release in the RELS_CSV constantmust be non-empty.${OPEN_SETTINGS_MSG}"
+        throw "Each release in the RELS_CSV constant must be non-empty.${OPEN_SETTINGS_FILE_MSG}"
     }
 }
 
 function ValidateSettings {
-    [string[]] $constants = @('CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS', 'TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM', 'RELS_CSV',
-                                'REMOTE_GIT_REPO_URL', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV', 'JIRA_URL', 'JIRA_PAT', 'DEVELOPER')
-    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'REPOS_TO_REFRESH_CSV')
+    [string[]] $constants = @('TICKETS_FOLDER_PATH', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS', 'OPEN_SETTINGS_FROM_CNFRM_MSG',
+                                'RELS_CSV', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV', 'REMOTE_GIT_REPO_URL',
+                                'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM', 'JIRA_URL', 'JIRA_PAT', 'DEVELOPER')
+    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'OPEN_SETTINGS_FROM_CNFRM_MSG', 'DEFAULT_TICKET_PREFIX', 'REPOS_TO_REFRESH_CSV')
     
     . "${SETTINGS_FILE}" # pick the latest settings (the user could change them during the current session)
     
@@ -235,13 +169,98 @@ function ValidateSettings {
         try {
             $constantVal = Get-Variable -Name $constant -ValueOnly -ErrorAction Stop
         } catch {
-            throw "Declare the ${constant} constant.${OPEN_SETTINGS_MSG}" # The error: "Cannot find a variable with the name '...'"
+            throw "Declare the ${constant} constant.${OPEN_SETTINGS_FILE_MSG}" # The error: "Cannot find a variable with the name '...'"
         }
         if ((IsEmpty $constantVal) -and -not ($optionals -contains $constant)) {
-            throw "Populate the ${constant} mandatory constant.${OPEN_SETTINGS_MSG}"
+            throw "Populate the ${constant} mandatory constant.${OPEN_SETTINGS_FILE_MSG}"
         }
     }
 } # ValidateSettings
+
+###################################################################################################################################################
+# Releases & branches functions:
+###################################################################################################################################################
+
+function GetDevRel () {
+    return $RELS_CSV -split ',' | Select-Object -First 1
+} # GetDevRel
+
+function BackportRelExistsInSettings () {
+    return ($RELS_CSV.IndexOf(',') -gt 0)
+} # BackportRelExistsInSettings
+
+function GetBackportRels () {
+    if (-not (BackportRelExistsInSettings)) { return @() }
+    return CsvToArray $RELS_CSV.Substring($RELS_CSV.IndexOf(',') + 1)
+} # GetBackportRels
+
+function GetLocalCreatedBranches ([string] $ticket) {
+    [string[]] $localCreatedBranches = git branch -l --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
+        # Each returned branch name starts with "  " (if checked-out, then with "* "): "  Rel1", "* Rel2", "  Rel3"
+        $_.Trim("*").Trim() # ==>> "Rel1", "Rel2", "Rel3"
+    }
+    if (-not $localCreatedBranches) { $localCreatedBranches = @() }
+    return $localCreatedBranches
+} # GetLocalCreatedBranches
+
+function GetRemoteCreatedBranches ([string] $ticket) {
+    PrintMsg "Fetching $($WORKING_REPO.ToUpper())..."
+    [string] $gitResult = git fetch --prune 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Fetching $($WORKING_REPO.ToUpper()) failed:`n${gitResult}"
+    }
+
+    [string[]] $remoteCreatedBranches = git branch -r --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
+        # Each returned branch name starts with "  origin/": "  origin/Rel1", "  origin/Rel2", "  origin/Rel3"
+        $_.Trim("  origin/") # ==>> "Rel1", "Rel2", "Rel3"
+    }
+    if (-not $remoteCreatedBranches) { $remoteCreatedBranches = @() }
+    return $remoteCreatedBranches
+} # GetRemoteCreatedBranches
+
+function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport > GetRelsHavingBranches > GetCreatedBranches
+    [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
+    [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
+    if ($localCreatedBranches.Count -eq 0 -and $remoteCreatedBranches.Count -eq 0) { return @() }
+
+    [string] $err = 
+        if ($remoteCreatedBranches.Count -eq 0) {
+            "On REMOTES:`nNo branches exist`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
+        } elseif ($localCreatedBranches.Count -eq 0) {
+            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`nNo branches exist"
+        } elseif (Compare-Object $remoteCreatedBranches $localCreatedBranches) {
+            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
+        } else {
+            $null
+        }
+
+    if (IsPopulated $err) {
+        $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`n" +
+               "Sync both the sets by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
+        throw $err
+    }
+
+    return $remoteCreatedBranches
+} # GetCreatedBranches
+
+function GetRelsHavingBranches ([string] $ticket) {
+    [string[]] $createdBranches = GetCreatedBranches $ticket
+    if ($createdBranches.Count -eq 0) { return @() }
+    [string[]] $relsHavingBranches = $createdBranches | ForEach-Object { ExtractRelFromBranch $_ }
+    return $relsHavingBranches
+} # GetRelsHavingBranches
+
+function AtLeastOneBranchIsCreatedFor ([string] $ticket) {
+    return (EnvVarExists $ticket $ENV_VAR__TICKET_TYPE)
+} # AtLeastOneBranchIsCreatedFor
+
+function ExtractRelFromBranch ([string] $branch) {
+    [int]    $firstSlashIndex = $branch.IndexOf('/') + 1
+    [int]    $lastSlashIndex = $branch.LastIndexOf('/')
+    [int]    $beforeLastSlashIndex = $branch.LastIndexOf('/', $lastSlashIndex - 1)
+    [string] $rel = $branch.Substring($firstSlashIndex, $beforeLastSlashIndex - $firstSlashIndex)
+    return $rel
+} # ExtractRelFromBranch
 
 ###################################################################################################################################################
 # Jira integration functions:
@@ -257,7 +276,7 @@ function InvokeJiraApi ([string] $ticket) {
         [string] $err = $_.Exception.Message
         switch ($_.Exception.Response.StatusCode.value__) {
             404 { $err = "Ticket '${ticket}' doesn't exist." } # "Not Found"
-            401 { $err = "Wrong Jira PAT.`nFix the JIRA_PAT constant.${OPEN_SETTINGS_MSG}" } # "Unauthorized"
+            401 { $err = "Wrong Jira PAT.`nFix the JIRA_PAT constant.${OPEN_SETTINGS_FILE_MSG}" } # "Unauthorized"
         }
         throw $err
     }
@@ -297,7 +316,6 @@ function GetFixVersions ([string] $ticket) {
     return $fixVersions
 } # GetFixVersions
 
-
 ###################################################################################################################################################
 # Messages functions:
 ###################################################################################################################################################
@@ -319,7 +337,7 @@ function DisplayErrorMsg ([string] $msg, [string] $msgTitle) {
 } # DisplayErrorMsg
 
 function UserRepliedYes ([string] $msg, [string] $title = "Confirm") {
-    PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side (the message may be underneath it).`n"
+    PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side (the message may be underneath it).`n* Minimize all windows by pressing Windows Key + M."
     [DialogResult] $userReply = [MessageBox]::Show(
         $msg,
         $title,
@@ -365,7 +383,7 @@ function AddPrefixIfNotProvided ([string] $ticket) {
             throw "'${ticket}' is a wrong ticket name.`n" +
                     "It must start with an alphabetic prefix and a dash.`n" +
                     "To add the ability to pass the digits alone, populate`n" +
-                    "the DEFAULT_TICKET_PREFIX constant.${OPEN_SETTINGS_MSG}"
+                    "the DEFAULT_TICKET_PREFIX constant.${OPEN_SETTINGS_FILE_MSG}"
         }
         $ticket = "${DEFAULT_TICKET_PREFIX}-${ticket}"
     }
@@ -373,7 +391,7 @@ function AddPrefixIfNotProvided ([string] $ticket) {
 } # AddPrefixIfNotProvided
 
 ###################################################################################################################################################
-# Technical functions:
+# String checking functions:
 ###################################################################################################################################################
 
 function IsEmpty ([string] $val) {
@@ -383,14 +401,6 @@ function IsEmpty ([string] $val) {
 function IsPopulated ([string] $val) {
     return (-not (IsEmpty $val))
 } # IsPopulated
-
-function ExtractRelFromBranch ([string] $branch) {
-    [int]    $firstSlashIndex = $branch.IndexOf('/') + 1
-    [int]    $lastSlashIndex = $branch.LastIndexOf('/')
-    [int]    $beforeLastSlashIndex = $branch.LastIndexOf('/', $lastSlashIndex - 1)
-    [string] $rel = $branch.Substring($firstSlashIndex, $beforeLastSlashIndex - $firstSlashIndex)
-    return $rel
-} # ExtractRelFromBranch
 
 ###################################################################################################################################################
 # Array manipulation functions:
@@ -464,24 +474,49 @@ function v ([string] $ticket) { # shows all env vars which currently exist for t
 } # v
 
 ###################################################################################################################################################
-# Misc functions:
+# Repo functions:
 ###################################################################################################################################################
 
+function SwitchToRepo ([string] $repo) {
+    Set-Location "${GIT_FOLDER_PATH}\${repo}" -ErrorAction Stop
+} # SwitchToRepo
+
 function SwitchToWorkingRepo {
-    Set-Location "${GIT_FOLDER_PATH}\${WORKING_REPO}" -ErrorAction Stop
+    SwitchToRepo $WORKING_REPO
 } # SwitchToWorkingRepo
+
+function RefreshRepos ([string] $command, [bool] $atLeastOneBranchAffected) { # $command: either "c" or "d"
+    if (-not $atLeastOneBranchAffected) { return }
+    [string] $fetchPurpose = if ($command -eq "c") { "download the new branches info" } else { "prune the remote/ pointers to the deleted branches" }
+
+    [string[]] $reposToRefresh = (CsvToArray $REPOS_TO_REFRESH_CSV)
+    if ($WORKING_REPO -notin $reposToRefresh) {
+        $reposToRefresh += $WORKING_REPO
+    }
+    
+    foreach ($repo in $reposToRefresh) {
+        PrintMsg "`nFetching $($repo.ToUpper()) to ${fetchPurpose}..."
+        SwitchToRepo $repo
+        if ($command -eq "c") { git fetch origin } else { git fetch --prune }
+        # Don't check $LASTEXITCODE. Even if the fetch failed, it's because of an unrelated issue - the remote pointers are downloaded/pruned.
+    }
+} # RefreshRepos
+
+###################################################################################################################################################
+# Misc functions:
+###################################################################################################################################################
 
 function BuildPrCreationUrl ([string] $rel, [string] $featBranch) {
     return "${REMOTE_GIT_REPO_URL}/compare/${rel}...${featBranch}?expand=1"
 } # BuildPrCreationUrl
 
 function OpenSettingsFile () {
-    if (UserRepliedYes "Do you want to open the Settings file and edit the releases?") {
-        Start-Process -FilePath $SETTINGS_FILE
-    }
+    if ($null -eq $OPEN_SETTINGS_FROM_CNFRM_MSG) { return }
+    if ((-not $OPEN_SETTINGS_FROM_CNFRM_MSG) -and (UserRepliedNo "Do you want to open the Settings file and fix RELS_CSV?")) { return }
+    Start-Process -FilePath $SETTINGS_FILE
 } # OpenSettingsFile
 
-function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______ReadMe_______.txt >>> "FOLDERS FOR TICKETS' ARTEFACTS")
+function CreateTicketFolder ([string] $ticket, [string] $branch) {
     if (IsEmpty $TICKETS_FOLDER_PATH) { return }
 
     [string] $templateFolderPath = "${TICKETS_FOLDER_PATH}\XXXXX"
@@ -507,8 +542,7 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) { # see _______
 
     [string] $ticketTitle = GetTicketTitle $ticket
     [string] $ticketTitleClean = $ticketTitle -replace '[][\\\/:*?"<>|]', '' # remove symbols prohibited in folders & files names (square brackets are allowed but make troubles with PS commands)
-    $ticketTitleClean = $ticketTitleClean -replace '\s{2,}', ' ' # If there are two or more spaces in a row, replace them with one space
-    #throw "ticketTitleClean=${ticketTitleClean}.txt"
+    $ticketTitleClean = $ticketTitleClean -replace '\s{2,}', ' ' # if there are two or more spaces in a row, replace them with one space
     [string] $ticketFolderPath = "${TICKETS_FOLDER_PATH}\${ticket} ${ticketTitleClean}"
     [bool]   $ticketFolderExists = Test-Path -Path $ticketFolderPath -PathType Container
     if ($ticketFolderExists) { return }

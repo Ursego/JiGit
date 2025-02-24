@@ -1,18 +1,24 @@
 ###################################################################################################################################################
-# The file contains the scripts for the Git Automation commands:
-#
-# c - "C"reate Branches
-# b - "B"ackport Commit
-# d - "D"elete Branches
-# s - Open the "S"ettings file
-#
-# The details are in _______ReadMe_______.txt
+# The scripts for the Git Automation commands:
+# c - Create branches
+# b - Backport commit
+# d - Delete branches
+# s - Open the Settings file
+###################################################################################################################################################
+# Developer: Michael Zuskin https://www.linkedin.com/in/zuskin/
+# This project on GitHub: https://github.com/Ursego/JiGit
 ###################################################################################################################################################
 
-. "${PSScriptRoot}\HelperFunctions.ps1"
+[string] $HELPER_FUNC_FILE = "${PSScriptRoot}\HelperFunctions.ps1"
+
+if (Test-Path -Path $HELPER_FUNC_FILE) {
+    . $HELPER_FUNC_FILE
+} else {
+    Write-Host "The file '${HELPER_FUNC_FILE}' is not found.`nTo use the Git Automation commands, restore the file and restart PowerShell.`n" -ForegroundColor Red
+}
 
 ###################################################################################################################################################
-# The "C"reate Branches script
+# The "Create branches" script
 ###################################################################################################################################################
 
 function c ([string] $ticket) {
@@ -36,8 +42,7 @@ function c ([string] $ticket) {
         [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
         [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
         [string[]] $rels = CsvToArray $RELS_CSV
-        
-        #throw "Going to create branches for:`n'${rels}'" #dbg - uncomment to test
+        #throw "Going to create branches for:`n'${rels}'" #dbg - uncomment to debug only
 
         PrintMsg "Pulling $($WORKING_REPO.ToUpper())..."
         [string] $gitResult = git pull 2>&1 # 2>&1 - don't throw an exception, just return the error message and make $LASTEXITCODE other than zero
@@ -96,16 +101,7 @@ function c ([string] $ticket) {
             }
         } # foreach ($rel in $rels)
 
-        if ($atLeastOneBranchIsPublishedByThisRun) {
-            [string[]] $reposToRefresh = (CsvToArray $REPOS_TO_REFRESH_CSV)
-            foreach ($repo in $reposToRefresh) {
-                Set-Location "${GIT_FOLDER_PATH}\${repo}" -ErrorAction Stop
-                PrintMsg "`nFetching $($repo.ToUpper()) to download the new branches info..."
-                git fetch origin
-                # Don't check $LASTEXITCODE. Even if the fetch failed, it's because of an unrelated issue - the remote/ pointers are downloaded.
-            }
-        }
-
+        RefreshRepos "c" $atLeastOneBranchIsPublishedByThisRun
         DisplaySuccessMsg "All the requested branches are created."
     } catch {
         $msg = $_.Exception.Message
@@ -115,7 +111,7 @@ function c ([string] $ticket) {
 } # c
 
 ###################################################################################################################################################
-# The "B"ackport Commit script
+# The "Backport commit" script
 ###################################################################################################################################################
 
 function b ([string] $ticket, [string] $commitHash) {
@@ -145,7 +141,7 @@ function b ([string] $ticket, [string] $commitHash) {
 
         [string[]] $backportRels = GetBackportRels
         ValidateBackport $ticket $commitHash $backportRels
-        #throw "The final backportRels:`n${backportRels}" #dbg - uncomment to test
+        #throw "The final backportRels:`n${backportRels}" #dbg - uncomment to debug only
         
         Clear-Host
         PrintMsg "####### BACKPORTING COMMIT ${commitHash} #######"
@@ -272,7 +268,7 @@ function b ([string] $ticket, [string] $commitHash) {
 } # b
 
 ###################################################################################################################################################
-# The "D"elete Branches script
+# The "Delete branches" script
 ###################################################################################################################################################
 
 function d ([string] $ticket) {
@@ -297,8 +293,7 @@ function d ([string] $ticket) {
         [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
         [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
         [string[]] $branchesToDelete = ($localCreatedBranches + $remoteCreatedBranches) | Select-Object -Unique # a branch could exist only locally or only remotely - delete everything
-
-        #throw "Going to delete branches:`n'${branchesToDelete}'" #dbg - uncomment to test
+        #throw "Going to delete branches:`n'${branchesToDelete}'" #dbg - uncomment to debug only
 
         [string] $checkedOutBranch = git branch --show-current 2>&1
         if ($LASTEXITCODE -ne 0) { throw "Cannot define checked out branch:`n`n${checkedOutBranch}" }
@@ -367,14 +362,7 @@ function d ([string] $ticket) {
             }
         } # foreach ($branchToDelete in $branchesToDelete)
         
-        if ($atLeastOneBranchIsDeleted) {
-            [string[]] $reposToRefresh = @($WORKING_REPO) + (CsvToArray $REPOS_TO_REFRESH_CSV)
-            foreach ($repo in $reposToRefresh) {
-                Set-Location "${GIT_FOLDER_PATH}\${repo}" -ErrorAction Stop
-                PrintMsg "`nFetching $($repo.ToUpper()) to prune the remote/ pointers to the deleted branches..."
-                git fetch --prune
-            }
-        }
+        RefreshRepos "d" $atLeastOneBranchIsDeleted
         
         if ($undeletedBranches.Count -eq 0) {
             CleanUpEnvVars $ticket
@@ -390,7 +378,7 @@ function d ([string] $ticket) {
 } # d
 
 ###################################################################################################################################################
-# Open the "S"ettings file
+# The "Open the Settings file" script
 ###################################################################################################################################################
 
 function s () {
