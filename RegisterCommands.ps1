@@ -6,6 +6,9 @@
 # REMARK: to see the contents of the PowerShell profile file, run:
 # notepad $PROFILE
 ###################################################################################################################################################
+# Developer: Michael Zuskin https://www.linkedin.com/in/zuskin/
+# This project on GitHub: https://github.com/Ursego/JiGit
+###################################################################################################################################################
 
 try {
     [bool] $profileFileExists = (Test-Path -Path $PROFILE)

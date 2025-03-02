@@ -25,39 +25,38 @@ if (Test-Path -Path $SETTINGS_FILE) {
 # Validation functions:
 ###################################################################################################################################################
 
-function ValidateCreate ([string] $ticket) {
+function ValidateCreate ([string] $ticket, [string[]] $rels) {
     ValidateRelsCsv
 
-    [string[]] $fixVersions = GetFixVersions $ticket #???
-    [string[]] $relsFromSettings = CsvToArray $RELS_CSV
-    [string]   $relsFromSettingsNlsv = ArrayToNlsv $relsFromSettings
-    [string]   $relsFromSettingsPluralEnding = if ($relsFromSettings.Count -gt 1) { "es" } else { "" }
+    [string[]] $fixVersions = GetFixVersions $ticket
+    [string]   $relsNlsv = ArrayToNlsv $rels
+    [string]   $branchPluralEnding = if ($rels.Count -gt 1) { "es" } else { "" }
     
     switch ($fixVersions.Count) {
-        $relsFromSettings.Count { $msg = $null } # success
-        0                       { $msg = "The ticket's 'Fix Version/s' field is empty." }
-        default                 { $msg = "The ticket's 'Fix Version/s':`n`n$(ArrayToNlsv $fixVersions)."
-                                  $msg += "`n`nIt seems like you need to create $($fixVersions.Count) branch"
-                                  $msg += if ($fixVersions.Count -gt 1) { "es." } else { "." }
+        $rels.Count { $msg = $null } # success
+        0                   { $msg = "The ticket's 'Fix Version/s' field is empty." }
+        default             { $msg = "The ticket's 'Fix Version/s':`n`n$(ArrayToNlsv $fixVersions)."
+                              $msg += "`n`nIt seems like you need to create $($fixVersions.Count) branch"
+                              $msg += if ($fixVersions.Count -gt 1) { "es." } else { "." }
         }
     }
 
     $msg += if (IsPopulated $msg) {
-        "`n`nHowever, you requested to create $($relsFromSettings.Count) branch${relsFromSettingsPluralEnding}:" +
-        "`n`n${relsFromSettingsNlsv}" +
+        "`n`nHowever, you requested to create $($rels.Count) branch${branchPluralEnding}:" +
+        "`n`n${relsNlsv}" +
         "`n`nDo you want to continue?"
     } else {
-        "Looks good, $($relsFromSettings.Count) branch${relsFromSettingsPluralEnding} will be created under:" +
-        "`n`n${relsFromSettingsNlsv}" +
-        "`n`n$($relsFromSettings.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
-        "`n`nHowever, you might want to make sure that you are creating the CORRECT branch${relsFromSettingsPluralEnding} by reviewing the 'Fix Version/s':" +
+        "Looks good, $($rels.Count) branch${branchPluralEnding} will be created under:" +
+        "`n`n${relsNlsv}" +
+        "`n`n$($rels.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
+        "`n`nHowever, you might want to make sure that you are creating the CORRECT branch${branchPluralEnding} by reviewing the 'Fix Version/s':" +
         "`n`n$(ArrayToNlsv $fixVersions)." +
         "`n`nDo you want to continue?"
     }
 
-    if (UserRepliedNo $msg "Creating branch${relsFromSettingsPluralEnding} for ${ticket} in $($WORKING_REPO.ToUpper())...") {
+    if (UserRepliedNo $msg "Creating branch${branchPluralEnding} for ${ticket} in $($WORKING_REPO.ToUpper())...") {
         Clear-Host
-        PrintMsg "The creation of branch${relsFromSettingsPluralEnding} for ${ticket} is aborted.`n"
+        PrintMsg "The creation of branch${branchPluralEnding} for ${ticket} is aborted.`n"
         OpenSettingsFile
         throw $SILENTLY_HALT
     }
@@ -71,14 +70,9 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     }
 
     if (-not (BackportRelExistsInSettings)) {
-        throw "The RELS_CSV constant in the Settings file has no backport releases.`n`n" +
-                "Run the 's' command to open the file, add the backport release(s) to RELS_CSV, and re-run the backport:`n`n" +
-                "b ${ticket} ${commitHash}`n"
-    }
-    
-    # Error message if the ticket has no feature branches at all:
-    if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
-        throw "${ticket} has no feature branches to backport into.`n"
+        throw "The RELS_CSV constant in the Settings file has no backport releases.`n${OPEN_SETTINGS_FILE_MSG}`n`n" +
+                "Add the backport release(s) to RELS_CSV, and re-run the backport:`n`n" +
+                "b ${ticket} ${commitHash}"
     }
 
     [string[]] $fixVersions = GetFixVersions $ticket
@@ -87,7 +81,7 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
     [string]   $backportRelsPluralEnding = if ($backportRels.Count -gt 1) { "s" } else { "" }
     [string]   $msg
     
-    # Confirmation message to review the backports releases:
+    # Confirmation dialog to review the backports releases:
     switch ($backportFixVersionsCount) {
         $backportRels.Count { $msg = $null } # success
         -1                  { $msg = "The ticket's 'Fix Version/s' field is empty." }
@@ -109,31 +103,50 @@ function ValidateBackport ([string] $ticket, [string] $commitHash, [string[]] $b
         "`n`n$(ArrayToNlsv $fixVersions)." +
         "`n`nDo you want to continue?"
     }
-    
-    if (UserRepliedNo $msg "Check the backport releases of ${ticket}") {
+    Clear-Host
+    if (UserRepliedNo $msg "Check the backport releases of ${ticket} in $($WORKING_REPO.ToUpper())") {
         Clear-Host
         PrintMsg "The backport of ${ticket} is aborted.`n"
         OpenSettingsFile
         throw $SILENTLY_HALT
     }
 
-    # Error message if the user is backporting into a release which has no feature branch:
-    [string[]] $relsHavingBranches = GetRelsHavingBranches $ticket
-    [string[]] $branchlessBackportRels = $backportRels | Where-Object { $_ -notin $relsHavingBranches }
-    if ($branchlessBackportRels.Count -eq 1) {
-        $msg = "You cannot backport into $($branchlessBackportRels[0]) since it has no feature branch. Run if you need to backport into it:" +
-                "`n`nc ${ticket}" +
-                "`nb ${ticket} ${commitHash}`n"
-        throw $msg
-    } elseif ($branchlessBackportRels.Count -gt 1) {
-        $msg = "You cannot backport into these releases since they have no feature branches:" +
-                "`n`n$(ArrayToNlsv $branchlessBackportRels)" +
-                "`n`nRun if you need to backport into them:" +
-                "`n`nc ${ticket}" +
-                "`nb ${ticket} ${commitHash}`n"
-        throw $msg
-    }
+    Clear-Host
+    PrintMsg "####### BACKPORTING COMMIT ${commitHash} #######`n"
+
+    EnsureBackportBranchesExistence $ticket
 } # ValidateBackport
+
+function EnsureBackportBranchesExistence ([string] $ticket) { # validate existence of all the backport feature branches on both LOCALS and REMOTES, and create any which is missing somewhere
+    [string] $devRel = GetDevRel
+    [string] $devBranch = BuildBranchName $ticket $devRel
+
+    [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
+    [string[]] $localCreatedBackportBranches = RemoveValueFromArray $devBranch $localCreatedBranches
+
+    [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
+    [string[]] $remoteCreatedBackportBranches = RemoveValueFromArray $devBranch $remoteCreatedBranches
+
+    [string[]] $backportRels = GetBackportRelsFromSettings
+    foreach ($backportRel in $backportRels) {
+        $backportBranch = BuildBranchName $ticket $backportRel
+
+        $existsLocally = ArrayContainsValue $localCreatedBackportBranches $backportBranch
+        $existsRemotely = ArrayContainsValue $remoteCreatedBackportBranches $backportBranch
+
+        if (-not ($existsLocally -or $existsRemotely)) {
+            PrintMsg "`n${backportBranch} doesn't exist."
+            CreateLocalBranch $backportBranch $backportRel
+            PublishBranch $backportBranch
+        } elseif ((-not $existsLocally) -and $existsRemotely) {
+            PrintMsg "`n${backportBranch} is not synchronized."
+            RecreateLocalBranchFromRemotes $backportBranch
+        } elseif ($existsLocally -and (-not $existsRemotely)) {
+            PrintMsg "`n${backportBranch} is not synchronized.`n   It exists on LOCALS but was deleted from REMOTES."
+            PublishBranch $backportBranch
+        }
+    }
+} # EnsureBackportBranchesExistence
 
 function ValidateDelete ([string] $ticket) {
     [string] $msg = if (-not (AtLeastOneBranchIsCreatedFor $ticket)) {
@@ -155,13 +168,13 @@ function ValidateRelsCsv {
     if ($RELS_CSV -match '(^|,)\s*(,|$)') {
         throw "Each release in the RELS_CSV constant must be non-empty.${OPEN_SETTINGS_FILE_MSG}"
     }
-}
+} # ValidateRelsCsv
 
 function ValidateSettings {
-    [string[]] $constants = @('TICKETS_FOLDER_PATH', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS', 'OPEN_SETTINGS_FROM_CNFRM_MSG',
+    [string[]] $constants = @('TICKETS_FOLDER_PATH', 'CONFIRM_DELETING_BRANCHES', 'CREATE_BACKPORT_PRS',
                                 'RELS_CSV', 'GIT_FOLDER_PATH', 'WORKING_REPO', 'REPOS_TO_REFRESH_CSV', 'REMOTE_GIT_REPO_URL',
                                 'DEFAULT_TICKET_PREFIX', 'DIGITS_IN_TICKET_NUM', 'JIRA_URL', 'JIRA_PAT', 'DEVELOPER')
-    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'OPEN_SETTINGS_FROM_CNFRM_MSG', 'DEFAULT_TICKET_PREFIX', 'REPOS_TO_REFRESH_CSV')
+    [string[]] $optionals = @('TICKETS_FOLDER_PATH', 'DEFAULT_TICKET_PREFIX', 'REPOS_TO_REFRESH_CSV')
     
     . "${SETTINGS_FILE}" # pick the latest settings (the user could change them during the current session)
     
@@ -178,7 +191,53 @@ function ValidateSettings {
 } # ValidateSettings
 
 ###################################################################################################################################################
-# Releases & branches functions:
+# Branches creation functions:
+###################################################################################################################################################
+
+function CreateLocalBranch ([string] $newBranch, [string] $rel) {
+    PrintMsg "   Creating on LOCALS..."
+    [string] $gitResult = git branch $newBranch $rel 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        if ($gitResult.Contains("not a valid object name")) {
+            PrintMsg "      '$rel' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
+            [string] $gitResult = git branch $rel "origin/${rel}" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                if ($gitResult.Contains("not a valid object name")) {
+                    PrintMsg "      '$rel' is not recognized on REMOTES too."
+                    $gitResult = "'$rel' doesn't exist. Check its spelling in the RELS_CSV constant in ${SETTINGS_FILE}.`n"
+                }
+            } else {
+                PrintMsg "      '$rel' is downloaded, creating the branch on LOCALS..."
+                [string] $gitResult = git branch $newBranch $rel 2>&1
+                if ($LASTEXITCODE -eq 0) { $gitResult = $null } # on success, don't throw an error
+            }
+        }
+        if ($gitResult) { throw "Cannot create $newBranch on LOCALS.`n`n${gitResult}" }
+    }
+    PrintMsg "      Successfully created."
+} # CreateLocalBranch
+
+function RecreateLocalBranchFromRemotes ([string] $branch) {
+    PrintMsg "   It exists on REMOTES but was deleted from LOCALS. Re-creating it on LOCALS from REMOTES..."
+    # Restore the missing local branch to point exactly where the remote branch is:
+    [string] $gitResult = git branch --track $branch "origin/${branch}" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "${branch} was deleted on LOCALS. The script tried to re-create it on LOCALS from REMOTES but unsuccessfully:`n${gitResult}"
+    }
+    PrintMsg "      Successfully re-created."
+} # RestoreLocalBranchFromRemote
+
+function PublishBranch ([string] $branch) {
+    PrintMsg "   Publishing to REMOTES..."
+    [string] $gitResult = git push -u origin $branch 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cannot publish $backportBranch.`n`n${gitResult}"
+    }
+    PrintMsg "      Successfully published."
+} # PublishBranch
+
+###################################################################################################################################################
+# Functions to return releases & branches info:
 ###################################################################################################################################################
 
 function GetDevRel () {
@@ -189,10 +248,10 @@ function BackportRelExistsInSettings () {
     return ($RELS_CSV.IndexOf(',') -gt 0)
 } # BackportRelExistsInSettings
 
-function GetBackportRels () {
+function GetBackportRelsFromSettings () {
     if (-not (BackportRelExistsInSettings)) { return @() }
     return CsvToArray $RELS_CSV.Substring($RELS_CSV.IndexOf(',') + 1)
-} # GetBackportRels
+} # GetBackportRelsFromSettings
 
 function GetLocalCreatedBranches ([string] $ticket) {
     [string[]] $localCreatedBranches = git branch -l --list "${$DEVELOPER}*${ticket}*" | ForEach-Object {
@@ -217,38 +276,6 @@ function GetRemoteCreatedBranches ([string] $ticket) {
     if (-not $remoteCreatedBranches) { $remoteCreatedBranches = @() }
     return $remoteCreatedBranches
 } # GetRemoteCreatedBranches
-
-function GetCreatedBranches ([string] $ticket) { # call stack: ValidateBackport > GetRelsHavingBranches > GetCreatedBranches
-    [string[]] $localCreatedBranches = GetLocalCreatedBranches $ticket
-    [string[]] $remoteCreatedBranches = GetRemoteCreatedBranches $ticket
-    if ($localCreatedBranches.Count -eq 0 -and $remoteCreatedBranches.Count -eq 0) { return @() }
-
-    [string] $err = 
-        if ($remoteCreatedBranches.Count -eq 0) {
-            "On REMOTES:`nNo branches exist`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
-        } elseif ($localCreatedBranches.Count -eq 0) {
-            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`nNo branches exist"
-        } elseif (Compare-Object $remoteCreatedBranches $localCreatedBranches) {
-            "On REMOTES:`n$(ArrayToNlsv $remoteCreatedBranches)`n`nOn LOCALS:`n$(ArrayToNlsv $localCreatedBranches)"
-        } else {
-            $null
-        }
-
-    if (IsPopulated $err) {
-        $err = "Ticket ${ticket} has different sets of feature branches on REMOTES and on LOCALS.`n`n${err}`n`n" +
-               "Sync both the sets by running this command:`n`nc ${ticket}`n`nIt will publish unpublished local branches and/or re-create deleted local branches.`n"
-        throw $err
-    }
-
-    return $remoteCreatedBranches
-} # GetCreatedBranches
-
-function GetRelsHavingBranches ([string] $ticket) {
-    [string[]] $createdBranches = GetCreatedBranches $ticket
-    if ($createdBranches.Count -eq 0) { return @() }
-    [string[]] $relsHavingBranches = $createdBranches | ForEach-Object { ExtractRelFromBranch $_ }
-    return $relsHavingBranches
-} # GetRelsHavingBranches
 
 function AtLeastOneBranchIsCreatedFor ([string] $ticket) {
     return (EnvVarExists $ticket $ENV_VAR__TICKET_TYPE)
@@ -286,7 +313,7 @@ function InvokeJiraApi ([string] $ticket) {
 function PopulateEnvVarsFromJira ([string] $ticket) {
     [bool] $alreadyRetrieved = (atLeastOneBranchIsCreatedFor $ticket)
     if ($alreadyRetrieved) { return }
-    PrintMsg "Getting ticket's Type and Title from Jira..."
+    PrintMsg "Getting ticket's info from Jira..."
     [PSCustomObject] $jiraResponse = InvokeJiraApi $ticket
     [string] $ticketType = ($jiraResponse.fields.issuetype.name -replace ' ', '').ToLower() # "Contract Modification" > "contractmodification"
     if (IsEmpty $ticketType) { throw "The 'Type' field is empty in ${ticket}." }
@@ -308,7 +335,7 @@ function GetTicketTitle ([string] $ticket) {
 
 function GetFixVersions ([string] $ticket) {
     # Returns the ticket's 'Fix Version/s' as an array. It uses their Descriptions which pop up when you are hooviring (they are more informative and often contain the release name).
-    # The Fix Version/s are not stored in an env var since 'b' must get the freshest version - the field could change after 'c' called PopulateEnvVarsFromJira (through BuildBranchName).
+    # The Fix Version/s are not stored in an env var since the validations must get the freshest version - the field could change after 'c' called PopulateEnvVarsFromJira (through BuildBranchName).
     PrintMsg "Getting ticket's Fix Version/s from Jira...`n"
     [PSCustomObject] $jiraResponse = InvokeJiraApi $ticket
     [string[]] $fixVersions = $jiraResponse.fields.fixVersions | ForEach-Object { $_.description }
@@ -332,18 +359,18 @@ function DisplaySuccessMsg ([string] $msg) {
     Write-Host "`n${DECORATIVE_LINE}`n${msg}`n${DECORATIVE_LINE}`n" -ForegroundColor Green
 } # DisplaySuccessMsg
 
-function DisplayErrorMsg ([string] $msg, [string] $msgTitle) {
+function DisplayErrorMsg ([string] $msg) {
     Write-Host "`n${DECORATIVE_LINE}`n${msg}`nThe operation is aborted.`n${DECORATIVE_LINE}`n" -ForegroundColor Red
 } # DisplayErrorMsg
 
 function UserRepliedYes ([string] $msg, [string] $title = "Confirm") {
-    PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side (the message may be underneath it).`n* Minimize all windows by pressing Windows Key + M."
+    PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side.`n* Minimize all windows by pressing 'Windows Key + M'.`n"
     [DialogResult] $userReply = [MessageBox]::Show(
         $msg,
         $title,
         [MessageBoxButtons]::YesNo,
         [MessageBoxIcon]::Question
-        #[MessageBoxDefaultButton]::Button2 # commented out since in many messages the safe option is Yes
+        #[MessageBoxDefaultButton]::Button2 # commented out since in some messages the safe option is Yes
     )
     return ($userReply -eq [DialogResult]::Yes)
 } # UserRepliedYes
@@ -426,6 +453,21 @@ function ArrayContainsValue ([string[]] $array, [string] $value) { # same as the
     if (-not $array) { return $false }
     return ($array -contains $value)
 } # ArrayContainsValue
+
+function RemoveValueFromArray ([string] $value, [string[]] $array) { #  returns the same array but without the element which contains $value
+    if (-not $array -or $array.Count -eq 0) { return @() }
+    
+    $index = $array.IndexOf($array -match "^$([regex]::Escape($value))$")
+    if ($index -ge 0) {
+        $array = $array[0..($index-1)] + $array[($index+1)..($array.Length-1)]
+    }
+    
+    if (-not $array -or $array.Count -eq 0) {
+        $array = @()
+    }
+    
+    return $array
+} # RemoveValueFromArray
 
 ###################################################################################################################################################
 # Environment variables functions:
@@ -511,8 +553,7 @@ function BuildPrCreationUrl ([string] $rel, [string] $featBranch) {
 } # BuildPrCreationUrl
 
 function OpenSettingsFile () {
-    if ($null -eq $OPEN_SETTINGS_FROM_CNFRM_MSG) { return }
-    if ((-not $OPEN_SETTINGS_FROM_CNFRM_MSG) -and (UserRepliedNo "Do you want to open the Settings file and fix RELS_CSV?")) { return }
+    if (UserRepliedNo "Do you want to open the Settings file and fix RELS_CSV?") { return }
     Start-Process -FilePath $SETTINGS_FILE
 } # OpenSettingsFile
 
