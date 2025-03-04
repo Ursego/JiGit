@@ -67,6 +67,7 @@ function c ([string] $ticket, [string] $relsCsv) {
 
         foreach ($rel in $rels) {
             [string] $newBranch = BuildBranchName $ticket $rel
+        
             PrintMsg "`n${newBranch}"
 
             $existsLocally = (ArrayContainsValue $localCreatedBranches $newBranch)
@@ -96,11 +97,11 @@ function c ([string] $ticket, [string] $relsCsv) {
         } # foreach ($rel in $rels)
 
         RefreshRepos "c" $atLeastOneBranchIsPublishedByThisRun
-        DisplaySuccessMsg "All the requested branches are created."
+        PrintSuccessMsg "All the requested branches are created."
     } catch {
         $msg = $_.Exception.Message
         if ($msg -eq $SILENTLY_HALT) { return }
-        DisplayErrorMsg $msg
+        PrintErrorMsg $msg
     }
 } # c
 
@@ -149,7 +150,8 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
             $backportRels = $backportRels | Select-Object -Unique
         }
 
-        ValidateBackport $ticket $commitHash
+        #[string[]] $backportRels = if ($backportRelsCsv) { (CsvToArray $backportRelsCsv) } else { GetBackportRelsFromSettings }
+        ValidateBackport $ticket $commitHash $backportRels
         #throw "The final backportRels:`n${backportRels}" #dbg - uncomment to debug only
 
         PrintMsg "Pulling $($WORKING_REPO.ToUpper())..."
@@ -166,7 +168,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
     } catch {
         $msg = $_.Exception.Message
         if ($msg -eq $SILENTLY_HALT) { return }
-        DisplayErrorMsg $msg
+        PrintErrorMsg $msg
         return
     }
 
@@ -240,7 +242,7 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
         } # foreach ($backportRel in $backportRels)
         
         $msg = if ($relsBackportedByThisRun.Count -gt 0) { "${ticket} is backported." } else { "No backports were done for ${ticket} by this 'b' command execution." }
-        DisplaySuccessMsg $msg
+        PrintSuccessMsg $msg
     } catch {
         $msg = $_.Exception.Message
         if ($msg -eq $SILENTLY_HALT) { return }
@@ -254,14 +256,29 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
         [bool] $failedRelIsLast = ($relsBackportedByThisRun.Count -eq ($backportRels.Count - 1))
         if ($failedRelIsLast) {
             $msg += "`n`nThe failed ${failedRel} was the last release to backport into.`n"
-        } else {
-            [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
-            $msg += "`n`nThen, do the remaining backport"
-            if ($remainingRels.Count -gt 1) { $msg += "s" }
-            $msg += " by running the next command:`n`nb ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)`n"
+            PrintErrorMsg $msg
+            return
         }
+        
+        # If this code reached, there is at least one more release to backport, so give the user instructions:
+        Clear-Host
+        [string[]] $remainingRels = $backportRels | Where-Object { $_ -notin ($relsBackportedByThisRun + $relsBackportedPreviously) -and $_ -ne $failedRel }
+        [string] $s = if ($remainingRels.Count -gt 1) { "s" } else { "" }
 
-        DisplayErrorMsg $msg
+        [string] $msgToPrint = $msg + "`n`nThen, complete the remaining backport${s} by running the next command:`n`nb ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)`n"
+        PrintErrorMsg $msgToPrint
+
+        [string] $msgForDialog = $msg +
+                    "`n`nAfter you finish, click Yes to do the remaining backport${s}." +
+                    "`n`nIf you click No, the operation will be aborted. The command to do the remaining backport${s} is printed on the screen, so you can copy it and execute later." +
+                    "`n`nATTENTION! Don't continue backporting until ${failedRel} is successfully cherry-picked and committed!" +
+                    "`n`nDo you want to do the remaining backport${s} now?"
+        if (UserRepliedYes $msgForDialog "Backport aborted") {
+            b ${ticket} ${commitHash} $(ArrayToCsv $remainingRels)
+        } else {
+            Clear-Host # clear "A dialog box is displayed.`nIf you don't see it..."
+            PrintErrorMsg $msgToPrint # re-print the error
+        }
     } finally {
         if ($prCreationUrls.Count -gt 0) {
             if ($CREATE_BACKPORT_PRS) {
@@ -282,11 +299,11 @@ function b ([string] $ticket, [string] $commitHash, [string] $backportRelsCsv) {
 ###################################################################################################################################################
 
 function d ([string] $ticket) {
+    [string]   $msg
     [bool]     $atLeastOneBranchIsDeleted = $false
     [string[]] $undeletedBranches = @()
     [string]   $SOFT_DELETE = "d" # throw "The branch '<branch-name>' is not fully merged" if the branch contains unmerged changes
     [string]   $HARD_DELETE = "D" # don't check for unmerged changes
-    [string]   $msg
 
     try {
         Clear-Host
@@ -378,14 +395,14 @@ function d ([string] $ticket) {
         
         if ($undeletedBranches.Count -eq 0) {
             CleanUpEnvVars $ticket
-            DisplaySuccessMsg "All the branches of ${ticket} are deleted."
+            PrintSuccessMsg "All the branches of ${ticket} are deleted."
         } else {
-            DisplaySuccessMsg "The branches of ${ticket} are deleted except of:`n$(ArrayToNlsv $undeletedBranches)"
+            PrintSuccessMsg "The branches of ${ticket} are deleted except of:`n$(ArrayToNlsv $undeletedBranches)"
         }
     } catch {
         $msg = $_.Exception.Message
         if ($msg -eq $SILENTLY_HALT) { return }
-        DisplayErrorMsg $msg
+        PrintErrorMsg $msg
     }
 } # d
 
@@ -394,5 +411,5 @@ function d ([string] $ticket) {
 ###################################################################################################################################################
 
 function s () {
-    Start-Process -FilePath $SETTINGS_FILE
+    OpenSettingsFile
 } # s

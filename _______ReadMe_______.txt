@@ -53,7 +53,7 @@ This option allows you to use non-standard releases in exceptional situations wi
 You will rarely need to use this feature.
 Be careful not to include spaces after the commas since space is a parameters separator.
 
-####### Do before you start:
+####### Before you start:
 
 1. Run RegisterCommands.ps1 in PowerShell (change C:\GIT_SCRIPTS to your actual path):
 powershell.exe -ExecutionPolicy Bypass -File "C:\GIT_SCRIPTS\RegisterCommands.ps1"
@@ -128,12 +128,9 @@ If everything is good and you click Yes to continue, the backporting process sta
 
 CONFLICTS:
 
-If you get a conflict, an error is displayed which suggests resolving it in a Git client app.
-If the failed release is not the last one to backport into, you are suggested to run 'b' again to complete the remaining backports.
-The script prints a ready-to-use command that passes the remaining backports as the third parameter to 'b'.
-If you rerun 'b' without that parameter, it will attempt to backport into already processed releases as well.
-That will generate errors, which the script gracefully handles.
-However, this slows down execution. To improve efficiency, it's best to pass the remaining releases.
+If a conflict occurs, a message is printed suggesting that you resolve it using a Git client app.
+If the failed release was not the last one to backport into, you are provided with the ready-to-use command to complete the remaining backports.
+Additionally, a dialog appears, allowing you to click Yes to complete the remaining backports immediately, without manually re-running 'b'.
 
 AUTOMATIC RECOVERY:
 

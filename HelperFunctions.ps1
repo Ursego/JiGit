@@ -8,7 +8,7 @@ using namespace System.Windows.Forms
 
 Add-Type -AssemblyName System.Windows.Forms
 
-[string] $DECORATIVE_LINE = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+[string] $DECOR_LINE = "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
 [string] $SILENTLY_HALT = "SILENTLY_HALT"
 [string] $ENV_VAR__TICKET_TYPE = "TYPE"
 [string] $ENV_VAR__TICKET_TITLE = "TITLE"
@@ -30,7 +30,7 @@ function ValidateCreate ([string] $ticket, [string[]] $rels) {
 
     [string[]] $fixVersions = GetFixVersions $ticket
     [string]   $relsNlsv = ArrayToNlsv $rels
-    [string]   $branchPluralEnding = if ($rels.Count -gt 1) { "es" } else { "" }
+    [string]   $es = if ($rels.Count -gt 1) { "es" } else { "" }
     
     switch ($fixVersions.Count) {
         $rels.Count { $msg = $null } # success
@@ -42,21 +42,21 @@ function ValidateCreate ([string] $ticket, [string[]] $rels) {
     }
 
     $msg += if (IsPopulated $msg) {
-        "`n`nHowever, you requested to create $($rels.Count) branch${branchPluralEnding}:" +
+        "`n`nHowever, you requested to create $($rels.Count) branch${es}:" +
         "`n`n${relsNlsv}" +
         "`n`nDo you want to continue?"
     } else {
-        "Looks good, $($rels.Count) branch${branchPluralEnding} will be created under:" +
+        "Looks good, $($rels.Count) branch${es} will be created under:" +
         "`n`n${relsNlsv}" +
         "`n`n$($rels.Count) is the correct NUMBER according to the ticket's 'Fix Version/s'." +
-        "`n`nHowever, you might want to make sure that you are creating the CORRECT branch${branchPluralEnding} by reviewing the 'Fix Version/s':" +
+        "`n`nHowever, you might want to make sure that you are creating the CORRECT branch${es} by reviewing the 'Fix Version/s':" +
         "`n`n$(ArrayToNlsv $fixVersions)." +
         "`n`nDo you want to continue?"
     }
 
-    if (UserRepliedNo $msg "Creating branch${branchPluralEnding} for ${ticket} in $($WORKING_REPO.ToUpper())...") {
+    if (UserRepliedNo $msg "Creating branch${es} for ${ticket} in $($WORKING_REPO.ToUpper())...") {
         Clear-Host
-        PrintMsg "The creation of branch${branchPluralEnding} for ${ticket} is aborted.`n"
+        PrintMsg "The creation of branch${es} for ${ticket} is aborted.`n"
         OpenSettingsFile
         throw $SILENTLY_HALT
     }
@@ -351,17 +351,17 @@ function PrintMsg ([string] $msg) {
     Write-Host $msg -ForegroundColor Green # to distinguish from white Git output
 } # PrintMsg
 
-function DisplayPopup ([string] $msg, [string] $title) {
-    [MessageBox]::Show($msg, $title) > $null # > $null avoids printing the clicked button's text to the terminal
-} # DisplayPopup
+function PrintSuccessMsg ([string] $msg) {
+    PrintMsg "`n${DECOR_LINE}`n${msg}`n${DECOR_LINE}`n"
+} # PrintSuccessMsg
 
-function DisplaySuccessMsg ([string] $msg) {
-    Write-Host "`n${DECORATIVE_LINE}`n${msg}`n${DECORATIVE_LINE}`n" -ForegroundColor Green
-} # DisplaySuccessMsg
+# function PrintSuccessMsg ([string] $msg) {
+#     Write-Host "`n${DECOR_LINE}`n${msg}`n${DECOR_LINE}`n" -ForegroundColor Green
+# } # PrintSuccessMsg
 
-function DisplayErrorMsg ([string] $msg) {
-    Write-Host "`n${DECORATIVE_LINE}`n${msg}`nThe operation is aborted.`n${DECORATIVE_LINE}`n" -ForegroundColor Red
-} # DisplayErrorMsg
+function PrintErrorMsg ([string] $msg) {
+    Write-Host "`n${DECOR_LINE}`n${msg}`nThe operation is aborted.`n${DECOR_LINE}`n" -ForegroundColor Red
+} # PrintErrorMsg
 
 function UserRepliedYes ([string] $msg, [string] $title = "Confirm") {
     PrintMsg "A dialog box is displayed.`nIf you don't see it:`n* Look at other monitors.`n* Move this PowerShell window to a side.`n* Minimize all windows by pressing 'Windows Key + M'.`n"
@@ -378,6 +378,10 @@ function UserRepliedYes ([string] $msg, [string] $title = "Confirm") {
 function UserRepliedNo ([string] $msg, [string] $title = "Confirm") {
     return (-not (UserRepliedYes $msg $title))
 } # UserRepliedNo
+
+# function DisplayPopup ([string] $msg, [string] $title) {
+#     [MessageBox]::Show($msg, $title) > $null # > $null avoids printing the clicked button's text to the terminal
+# } # DisplayPopup
 
 ###################################################################################################################################################
 # Parameters manipulation functions:
@@ -553,7 +557,6 @@ function BuildPrCreationUrl ([string] $rel, [string] $featBranch) {
 } # BuildPrCreationUrl
 
 function OpenSettingsFile () {
-    if (UserRepliedNo "Do you want to open the Settings file and fix RELS_CSV?") { return }
     Start-Process -FilePath $SETTINGS_FILE
 } # OpenSettingsFile
 
@@ -578,7 +581,7 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) {
                         "The folder contains the XXXXX.txt template file.`n" +
                         "Change its content to fit to your needs.`n`n" +
                         "This message will not be displayed again."
-        DisplaySuccessMsg $msg
+        PrintSuccessMsg $msg
     }
 
     [string] $ticketTitle = GetTicketTitle $ticket
