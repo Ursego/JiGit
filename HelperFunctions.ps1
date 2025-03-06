@@ -571,7 +571,6 @@ function CreateTicketFolder ([string] $ticket, [string] $branch) {
 
         # Also, create the XXXXX.txt file within it:
         [string] $fileContent = "_TICKET_NAME_ _TICKET_TITLE_`n" +
-                                "Hi <write the tester name here>, ${JIRA_URL}/browse/_TICKET_NAME_ is ready for peer review.`n" +
                                 "_DEV_PR_CREATION_URL_"
         Set-Content -Path "${templateFolderPath}\XXXXX.txt" -Value $fileContent
         

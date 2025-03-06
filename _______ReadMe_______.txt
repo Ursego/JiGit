@@ -60,13 +60,12 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\GIT_SCRIPTS\RegisterCommands.ps
 
 2. Go to Settings.ps1 and populate all the constants which are NOT marked as OPTIONAL.
 
+Notice the DEFAULT_TICKET_PREFIX constant. If you populate it, then you can provide only the digits to the commands.
+For example, if it's "ABC", then you can send ABC-12345 or just 12345.
+
 ####### The 'c' command - Create branches:
 
-c ABC-89816
-
-If you have populated the DEFAULT_TICKET_PREFIX constant with "ABC ", then the next call is identical:
-
-c 89816
+c ABC-12345
 
 Before creating the branches, 'c' Pulls the working repo. That ensures you will change the freshest version of the objects.
 Tip: run 'c' just before you start working on the ticket, not in advance — to decrease the chance of future conflicts.
@@ -93,10 +92,12 @@ If everything is good and you click Yes to continue, the branches creation proce
 
 AUTOMATIC RECOVERY:
 
+The script solves some of the problems encountered by itself, saving you from having to do it manually in Git.
+
 You can rerun 'c' for the same ticket to ensure that branches exist locally and remotely for all the releases of RELS_CSV. The recovery logic:
 1. A branch, mistakenly deleted from locals, is re-created to point exactly where the remote branch is.
 2. A branch, mistakenly deleted from remotes, is re-published from locals.
-3. If a new release was added to RELS_CSV after the previous run of 'c', create a branch for it.
+3. If a new release was added to RELS_CSV after the previous run of 'c', create a branch for it. If it's the first time a feature branch is being created for that bas branch, the script creates it locally, printing this message: "'<release name>' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
  
 BONUS TRACK:
 
@@ -105,7 +106,7 @@ BONUS TRACK:
 ####### The 'b' command – Backport commit:
 
 Accepts the ticket's number and the source commit hash:
-b 88607 4411d95
+b ABC-12345 4411d95
 
 HOW TO OBTAIN THE COMMIT HASH:
 
@@ -154,7 +155,7 @@ In this case, the PowerShell commands to open the URLs will be printed on the sc
 Deletes ALL the branches of the ticket (including the DEV branch) from both REMOTES and LOCALS.
 Run it when you have squashed and merged all the backport PRs.
 
-d 89816
+d ABC-12345
 
 The confirmation dialog is displayed only if the CONFIRM_DELETING_BRANCHES constant is $true.
  
@@ -199,23 +200,17 @@ THE XXXXX.txt FILE:
 The script creates it with this content:
 
 _TICKET_NAME_ _TICKET_TITLE_
-Hi <write the tester name here>, https://your_jira_site.com/browse/_TICKET_NAME_ is ready for peer review.
 _DEV_PR_CREATION_URL_
 
-When XXXXX.txt is cloned together with its parent XXXXX folder for each new ticket, the placeholders are substitute with the actual values.
-The only thing you need to do manually within the created XXXXX.txt is change <write the tester name here> to the actual tester name.
+When XXXXX.txt is cloned together with its parent XXXXX folder for each new ticket, the placeholders are substituted with the actual values.
 
 EXPLANATION:
 
 Line 1:
-Ready to be copied to the required "Description" when you commit.
+Ready to be copied to the required "Description" field of your Git client app when you commit.
 
 Line 2:
-The message for the tester when it's time for the peer review.
-It also allows to quickly open the ticket from Notepad++ by double-clicking the link.
-
-Line 3:
 The URL to double-click when it's time to create the DEV PR.
 You can create it from a Git client, but then you need to populate the "base:" dropdown manually.
 
-You can do whatever you want with any placeholders in your XXXXX.txt – remove, change location, or add more occurrences.
+You can add to that template any stuff you want, and do whatever with the placeholders – remove, change location, or add more occurrences.
