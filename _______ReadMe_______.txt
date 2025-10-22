@@ -61,14 +61,14 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\GIT_SCRIPTS\RegisterCommands.ps
 2. Go to Settings.ps1 and populate all the constants which are NOT marked as OPTIONAL.
 
 Notice the DEFAULT_TICKET_PREFIX constant. If you populate it, then you can provide only the digits to the commands.
-For example, if it's "ABC", then you can send ABC-12345 or just 12345.
+For example, if it's "ABC", then you can type either "c ABC-12345" or "c 12345".
 
 ####### The 'c' command - Create branches:
 
 c ABC-12345
 
 Before creating the branches, 'c' Pulls the working repo. That ensures you will change the freshest version of the objects.
-Tip: run 'c' just before you start working on the ticket, not in advance — to decrease the chance of future conflicts.
+Tip: run 'c' just before you start working on the ticket, not in advance — to decrease a chance of future conflicts.
 
 CONFIRMATION DIALOG:
 
@@ -97,11 +97,13 @@ The script solves some of the problems encountered by itself, saving you from ha
 You can rerun 'c' for the same ticket to ensure that branches exist locally and remotely for all the releases of RELS_CSV. The recovery logic:
 1. A branch, mistakenly deleted from locals, is re-created to point exactly where the remote branch is.
 2. A branch, mistakenly deleted from remotes, is re-published from locals.
-3. If a new release was added to RELS_CSV after the previous run of 'c', create a branch for it. If it's the first time a feature branch is being created for that bas branch, the script creates it locally, printing this message: "'<release name>' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
+3. If a new release was added to RELS_CSV after the previous run of 'c', create a branch for it.
+     If it's the first time a feature branch is being created for that base branch, the script downloads it to locals, printing this message:
+     "'<release name>' is not recognized on LOCALS. It could be a new release just added to the project. Downloading it..."
  
 BONUS TRACK:
 
-'c' also creates a dedicated folder to store any ticket-related files (see " Folders for tickets' artefacts" below).
+'c' also creates a dedicated folder to store any ticket-related files (see "Folders for tickets' artefacts" below).
 
 ####### The 'b' command – Backport commit:
 
@@ -111,7 +113,7 @@ b ABC-12345 4411d95
 HOW TO OBTAIN THE COMMIT HASH:
 
 In the DEV Pull Request, find (Ctrl+F) 'merged commit' - you will see '[your_name] merged commit [commit_hash] into [release]'.
-Tip: immediately after the DEV Pull Request’s "Squash & Merge ", grab its commit hash and run the 'b' command.
+Tip: immediately after the DEV Pull Request’s "Squash & Merge ", copy its hash and run the 'b' command.
 
 CONFIRMATION DIALOG:
 
@@ -145,7 +147,7 @@ At the end, 'b' opens the URLs to create Pull Requests for all successful backpo
 The "base:" dropdown will be pre-populated with the correct release, so you only need to click "Create pull request".
 
 PRs for the failed backports should be created from the Git client where you resolve the problem and complete the backport.
-That’s why the conflict error message reminds: "create the pull request also there".
+The conflict error message will remind you to do that.
 
 If you don't want the browser to popup and interrupt your work, set CREATE_BACKPORT_PRS to $false.
 In this case, the PowerShell commands to open the URLs will be printed on the screen, so you can execute them later.
@@ -160,25 +162,25 @@ d ABC-12345
 The confirmation dialog is displayed only if the CONFIRM_DELETING_BRANCHES constant is $true.
  
 If one of the branches is current (checked-out) in the repo, it cannot be deleted.
-The good news is that the command automatically switches to another branch to remove the stopper, so you don’t need to do anything.
+The good news is that the 'd' command automatically switches to another branch to remove the stopper, so you don’t need to do anything.
 
 ####### Folders for tickets' artefacts:
 
 Many developers manage tickets using dedicated folders where they place related files.
 Each such folder usually has a text file named after the ticket - for remarks, related SQLs, TODOs etc.
-In addition to creating the branches, the 'c' command creates a dedicated folder for each new ticket.
+In addition to creating the branches, the 'c' command creates a dedicated folder for each new ticket (if it doesn't exist yet).
 If you want to manage tickets with such folders, populate the TICKETS_FOLDER_PATH constant with yours (like "C:\DEV\Tickets").
 Otherwise leave it blank.
 
 For this functionality to work, two conditions must be met:
-1. Your tickets folder contains a template folder XXXXX.
-3. That folder contains a template file named XXXXX.txt.
+1. Your tickets folder must contain a template folder XXXXX.
+3. That folder must contain a template file named XXXXX.txt.
 
 For each new ticket, the XXXXX folder is cloned with whatever inside (so you can create any files or sub-folders within it).
 The cloned folder name is generated as the ticket's name (number) + title.
 
 You don't need to create the XXXXX folder and file!
-When the 'c' script is executed for the first time and doesn’t find them in your tickets folder, it creates them automatically.
+When the 'c' script is executed for the first time and doesn't find them in your tickets folder, it creates them automatically.
 For example, if the first run is "c 11111", you will get the following structure:
 
 ABC-11111 The ticket's title
@@ -214,3 +216,4 @@ The URL to double-click when it's time to create the DEV PR.
 You can create it from a Git client, but then you need to populate the "base:" dropdown manually.
 
 You can add to that template any stuff you want, and do whatever with the placeholders – remove, change location, or add more occurrences.
+
